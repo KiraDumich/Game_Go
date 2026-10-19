@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { findCar } from './cars';
-import { LEVELS, PHASE_2_ROAD_TINT, PHASE_2_START_MS, withPhase2, type LevelConfig } from './levels';
+import { LEVELS, PHASE_2_ROAD_TINT, PHASE_2_SCORE, withPhase2, type LevelConfig } from './levels';
 import {
   TRAFFIC_COLORS,
   carTextureKey,
@@ -47,6 +47,7 @@ const COUNTDOWN_MS = 3000;
 type Obstacle = {
   sprite: Phaser.GameObjects.Image;
   speed: number; // своя скорость вперёд; 0 — конус, < 0 — встречная машина
+  passed: boolean; // уже проехало мимо игрока (засчитано в счёт)
 };
 
 type RaceState = 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
@@ -54,6 +55,7 @@ type RaceState = 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
 type SceneData = {
   levelIndex?: number;
   totalTime?: number; // время прошлых уровней, мс
+  scoreBefore?: number; // объехано препятствий на прошлых уровнях
 };
 
 const FONT = { fontFamily: '"Courier New", monospace', fontStyle: 'bold' };
@@ -69,6 +71,8 @@ export class GameScene extends Phaser.Scene {
   private phase: 1 | 2 = 1;
   private levelIndex = 0;
   private totalTime = 0;
+  private scoreBefore = 0; // объехано на прошлых уровнях забега
+  private dodged = 0; // объехано на текущем уровне
   private bestTimes: number[] = [];
 
   private road!: Phaser.GameObjects.TileSprite;
@@ -123,9 +127,11 @@ export class GameScene extends Phaser.Scene {
     // create() вызывается и при scene.restart(), поэтому сбрасываем состояние здесь
     this.levelIndex = data.levelIndex ?? 0;
     this.totalTime = data.totalTime ?? 0;
+    this.scoreBefore = data.scoreBefore ?? 0;
+    this.dodged = 0;
     this.level = LEVELS[this.levelIndex] ?? LEVELS[0]!;
     this.rules = this.level;
-    this.phase = 1; // если минута уже прошла, фаза 2 включится на первом кадре гонки
+    this.phase = 1; // если порог уже набран на прошлом уровне, фаза 2 включится на первом кадре гонки
     this.obstacles = [];
     this.finishLine = undefined;
     this.state = 'countdown';
@@ -167,12 +173,13 @@ export class GameScene extends Phaser.Scene {
 
     const seconds = delta / 1000;
     this.raceTime += delta;
-    this.checkPhase();
     this.updateSpeed(time, seconds);
     this.steer(seconds);
     this.scrollWorld(seconds);
     this.spawnObstacles();
     this.checkCollisions(time);
+    this.countDodged(); // после столкновений: сбитое препятствие уже убрано и не засчитается
+    this.checkPhase();
     this.checkFinish();
     this.updatePlayerLook(time);
     this.updateHud(time);
@@ -464,7 +471,7 @@ export class GameScene extends Phaser.Scene {
     const lineX = Math.random() < LINE_CONE_CHANCE ? this.freeLineX(lane) : undefined;
     const x = lineX ?? this.randomXInLane(lane, this.textures.getFrame('cone').width / 2);
     const sprite = this.add.image(x, SPAWN_Y, 'cone').setDepth(2);
-    this.obstacles.push({ sprite, speed: 0 });
+    this.obstacles.push({ sprite, speed: 0, passed: false });
   }
 
   /** Случайное место в полосе от края до края (препятствие целиком в полосе) — перекрывает и обочину. */
@@ -501,7 +508,7 @@ export class GameScene extends Phaser.Scene {
     const speed = isOncoming
       ? -this.rules.oncomingSpeed
       : Phaser.Math.Between(this.rules.trafficMinSpeed, this.rules.trafficMaxSpeed);
-    this.obstacles.push({ sprite, speed });
+    this.obstacles.push({ sprite, speed, passed: false });
   }
 
   // --- Столкновения ---
@@ -550,13 +557,25 @@ export class GameScene extends Phaser.Scene {
 
   // --- Фаза 2 ---
 
-  /** Время игры: пройденные уровни + текущий (паузы и отсчёт не считаются). */
-  private sessionTime(): number {
-    return this.totalTime + this.raceTime;
+  /** Счёт забега: сколько препятствий объехано на прошлых уровнях и на текущем. */
+  private score(): number {
+    return this.scoreBefore + this.dodged;
+  }
+
+  /** Препятствие засчитывается, когда целиком проехало ниже машины игрока без удара. */
+  private countDodged(): void {
+    const playerBottom = this.player.y + this.player.displayHeight / 2;
+    for (const obstacle of this.obstacles) {
+      const top = obstacle.sprite.y - obstacle.sprite.displayHeight / 2;
+      if (!obstacle.passed && top > playerBottom) {
+        obstacle.passed = true;
+        this.dodged += 1;
+      }
+    }
   }
 
   private checkPhase(): void {
-    if (this.phase === 1 && this.sessionTime() >= PHASE_2_START_MS) this.enterPhase2();
+    if (this.phase === 1 && this.score() >= PHASE_2_SCORE) this.enterPhase2();
   }
 
   private enterPhase2(): void {
@@ -579,11 +598,10 @@ export class GameScene extends Phaser.Scene {
 
   private updatePhaseText(): void {
     if (this.phase === 2) {
-      this.phaseText.setText('ФАЗА 2').setColor('#feae34');
+      this.phaseText.setText(`ФАЗА 2 · объехано ${this.score()}`).setColor('#feae34');
       return;
     }
-    const left = Math.max(0, PHASE_2_START_MS - this.sessionTime());
-    this.phaseText.setText(`Фаза 1 · до фазы 2 ${formatTime(left)}`).setColor('#ffffff');
+    this.phaseText.setText(`Объехано ${this.score()} / ${PHASE_2_SCORE} до фазы 2`).setColor('#ffffff');
   }
 
   // --- Финиш и конец уровня ---
@@ -630,7 +648,7 @@ export class GameScene extends Phaser.Scene {
     } else if (isLastLevel && Phaser.Input.Keyboard.JustDown(this.garageKey)) {
       this.scene.start('ShopScene');
     } else if (!isLastLevel && Phaser.Input.Keyboard.JustDown(this.nextKey)) {
-      this.scene.restart({ levelIndex: this.levelIndex + 1, totalTime: this.totalTime });
+      this.scene.restart({ levelIndex: this.levelIndex + 1, totalTime: this.totalTime, scoreBefore: this.score() });
     }
   }
 
@@ -645,9 +663,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restartLevel(levelIndex: number): void {
-    // при перезапуске уровня время прошлых уровней сохраняется, при новой игре — обнуляется
-    const totalTime = levelIndex === 0 ? 0 : this.totalTime;
-    this.scene.restart({ levelIndex, totalTime });
+    // при перезапуске уровня время и счёт прошлых уровней сохраняются, при новой игре — обнуляются
+    const isNewGame = levelIndex === 0;
+    const totalTime = isNewGame ? 0 : this.totalTime;
+    const scoreBefore = isNewGame ? 0 : this.scoreBefore;
+    this.scene.restart({ levelIndex, totalTime, scoreBefore });
   }
 
   // --- Интерфейс ---
