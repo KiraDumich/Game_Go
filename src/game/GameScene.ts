@@ -46,7 +46,7 @@ type Obstacle = {
   speed: number; // своя скорость вперёд; 0 — конус, < 0 — встречная машина
 };
 
-type RaceState = 'countdown' | 'racing' | 'crashed' | 'finished';
+type RaceState = 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
 
 type SceneData = {
   levelIndex?: number;
@@ -57,7 +57,7 @@ const FONT = { fontFamily: '"Courier New", monospace', fontStyle: 'bold' };
 
 /**
  * «Пиксельные гонки»: вид сверху, едем по трассе и объезжаем конусы и машины.
- * ↑ — газ, ↓ — тормоз, ←/→ — руль, Space — нитро.
+ * ↑ — газ, ↓ — тормоз, ←/→ — руль, Space — нитро, P — пауза.
  * 2 уровня, 3 жизни на уровень, R — заново, M — гараж (выбор машины).
  */
 export class GameScene extends Phaser.Scene {
@@ -77,6 +77,7 @@ export class GameScene extends Phaser.Scene {
   private restartKey!: Phaser.Input.Keyboard.Key;
   private nextKey!: Phaser.Input.Keyboard.Key;
   private garageKey!: Phaser.Input.Keyboard.Key;
+  private pauseKey!: Phaser.Input.Keyboard.Key;
 
   private timeText!: Phaser.GameObjects.Text;
   private speedText!: Phaser.GameObjects.Text;
@@ -84,6 +85,7 @@ export class GameScene extends Phaser.Scene {
   private nitroText!: Phaser.GameObjects.Text;
   private progressMarker!: Phaser.GameObjects.Rectangle;
   private centerText!: Phaser.GameObjects.Text;
+  private pauseOverlay!: Phaser.GameObjects.Container;
 
   private state: RaceState = 'countdown';
   private raceStartAt = 0;
@@ -95,6 +97,8 @@ export class GameScene extends Phaser.Scene {
   private invulnerableUntil = 0;
   private nitroUntil = 0;
   private nitroReadyAt = 0;
+  private pausedAt = 0; // момент, когда нажали паузу
+  private stateBeforePause: RaceState = 'racing'; // куда вернуться после паузы
 
   constructor() {
     super('GameScene');
@@ -133,6 +137,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    if (Phaser.Input.Keyboard.JustDown(this.pauseKey)) this.togglePause(time);
+    if (this.state === 'paused') return;
+
     if (this.state === 'crashed') {
       if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.restartLevel(this.levelIndex);
       else if (Phaser.Input.Keyboard.JustDown(this.garageKey)) this.scene.start('ShopScene');
@@ -202,7 +209,7 @@ export class GameScene extends Phaser.Scene {
     this.add.text(leftX, 16, this.level.name.replace(' — ', '\n'), small).setDepth(10);
     this.timeText = this.add.text(leftX, 80, '', big).setDepth(10);
     this.add
-      .text(leftX, height - 64, '↑ газ  ↓ тормоз\n←→ руль  Space нитро', { ...small, fontSize: '14px' })
+      .text(leftX, height - 82, '↑ газ  ↓ тормоз\n←→ руль  Space нитро\nP пауза', { ...small, fontSize: '14px' })
       .setDepth(10);
 
     const rightX = width - 16;
@@ -231,7 +238,28 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(20);
 
+    this.createPauseOverlay();
     this.updateHud(this.time.now);
+  }
+
+  /** Затемнение экрана и надпись PAUSE — поверх всего, скрыто до нажатия P. */
+  private createPauseOverlay(): void {
+    const { width, height } = this.scale;
+    const shade = this.add.rectangle(0, 0, width, height, 0x1a1c2c, 0.6).setOrigin(0, 0);
+    const title = this.add
+      .text(width / 2, height / 2 - 20, 'PAUSE', {
+        ...FONT,
+        fontSize: '72px',
+        color: '#fee761',
+        stroke: '#1a1c2c',
+        strokeThickness: 8,
+      })
+      .setOrigin(0.5);
+    const hint = this.add
+      .text(width / 2, height / 2 + 40, 'P — продолжить', { ...FONT, fontSize: '20px', color: '#ffffff' })
+      .setOrigin(0.5);
+
+    this.pauseOverlay = this.add.container(0, 0, [shade, title, hint]).setDepth(30).setVisible(false);
   }
 
   private createInput(): void {
@@ -250,6 +278,51 @@ export class GameScene extends Phaser.Scene {
     this.restartKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
     this.nextKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.garageKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
+    this.pauseKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+  }
+
+  /**
+   * Phaser запоминает нажатие клавиши, пока его не прочитает JustDown.
+   * Нажатия Space/R/M/Enter, сделанные раньше (в гонке, на отсчёте, на паузе),
+   * не должны срабатывать в новом состоянии — читаем их и выбрасываем.
+   * key.reset() не подходит: он «отпускает» зажатую клавишу, и автоповтор нажмёт её снова.
+   */
+  private forgetKeyPresses(): void {
+    for (const key of [this.nitroKey, this.restartKey, this.nextKey, this.garageKey]) {
+      Phaser.Input.Keyboard.JustDown(key);
+    }
+  }
+
+  // --- Пауза ---
+
+  private togglePause(time: number): void {
+    if (this.state === 'paused') this.resumeGame(time);
+    else if (this.state === 'racing' || this.state === 'countdown') this.pauseGame(time);
+    // после аварии и финиша пауза не нужна — там игра и так стоит
+  }
+
+  private pauseGame(time: number): void {
+    this.stateBeforePause = this.state;
+    this.state = 'paused';
+    this.pausedAt = time;
+    this.tweens.pauseAll(); // замирают всплывающие надписи и отлетающие препятствия
+    this.centerText.setVisible(false); // отсчёт 3-2-1 не должен наезжать на PAUSE; updateCountdown покажет его снова
+    this.pauseOverlay.setVisible(true);
+  }
+
+  private resumeGame(time: number): void {
+    // Таймеры хранят момент времени, а time шёл и во время паузы.
+    // Сдвигаем их на длину паузы, иначе нитро и неуязвимость «сгорят» на паузе.
+    const pauseDuration = time - this.pausedAt;
+    this.raceStartAt += pauseDuration;
+    this.nitroUntil += pauseDuration;
+    this.nitroReadyAt += pauseDuration;
+    this.invulnerableUntil += pauseDuration;
+
+    this.forgetKeyPresses();
+    this.tweens.resumeAll();
+    this.pauseOverlay.setVisible(false);
+    this.state = this.stateBeforePause;
   }
 
   // --- Старт ---
@@ -262,6 +335,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.state = 'racing';
+    this.forgetKeyPresses(); // Space, нажатый на отсчёте, не включает нитро на старте
     this.centerText.setVisible(false);
     this.showPopup(this.scale.width / 2, this.scale.height / 2, 'GO!', '#63c74d');
   }
@@ -435,6 +509,7 @@ export class GameScene extends Phaser.Scene {
 
   private finishLevel(): void {
     this.state = 'finished';
+    this.forgetKeyPresses();
     this.player.setAlpha(1).setAngle(0);
 
     const previousBest = this.bestTimes[this.levelIndex];
@@ -472,6 +547,7 @@ export class GameScene extends Phaser.Scene {
 
   private crashOut(): void {
     this.state = 'crashed';
+    this.forgetKeyPresses();
     this.player.setAlpha(1).setAngle(0).setTint(0x5d5d5d);
     this.updateHud(this.time.now);
     this.centerText
