@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { findCar } from './cars';
-import { LEVELS, PHASE_2_PROGRESS, PHASE_2_ROAD_TINT, withPhase2, type LevelConfig } from './levels';
+import { GAME_CONFIG } from './gameConfig';
+import { LEVELS, PHASE_2_ROAD_TINT, withPhase2, type LevelConfig } from './levels';
 import {
   TRAFFIC_COLORS,
   carTextureKey,
@@ -13,36 +14,18 @@ import {
 const ROAD_WIDTH = 480;
 const LANE_COUNT = 4;
 
+// Числа баланса (скорость, нитро, жизни, препятствия, фаза 2) — в gameConfig.ts.
+// Здесь только раскладка экрана и технические значения.
+
 // --- Игрок ---
 const PLAYER_Y_FROM_BOTTOM = 110; // машина игрока стоит внизу экрана
-const ACCELERATION = 260; // px/с² при нажатой ↑
-const BRAKE = 520; // px/с² при нажатой ↓
-const COAST_SLOWDOWN = 90; // px/с², если газ отпущен
-const STEER_SPEED = 300; // px/с влево-вправо
 const STEER_TILT_DEG = 10; // наклон машины при повороте
 const SPEED_TO_KMH = 0.4; // перевод скорости в «км/ч» для HUD
-
-// --- Нитро (Space) ---
-const NITRO_DURATION_MS = 1500;
-const NITRO_COOLDOWN_MS = 5000;
-const NITRO_SPEED_BONUS = 1.35; // во сколько раз растёт предел скорости
-const NITRO_ACCELERATION = 700;
-
-// --- Столкновения ---
-const START_LIVES = 3;
-const INVULNERABLE_MS = 1500;
-const CRASH_SPEED_FACTOR = 0.3; // после удара остаётся 30% скорости
-const HITBOX_SCALE = 0.75; // хитбокс чуть меньше спрайта, чтобы было честно
 
 // --- Препятствия ---
 const SPAWN_Y = -80;
 const FREE_LANE_ZONE_Y = 120; // полоса считается занятой, если там есть препятствие выше этой линии
 const DESPAWN_MARGIN = 200;
-const LINE_CONE_CHANCE = 0.35; // доля конусов, которые ставятся прямо на разметку между полосами
-const TRAFFIC_CAR_SCALE = 1.5; // машины соперников крупнее: 40×64 → 60×96, занимают больше места
-const LINE_CAR_CHANCE = 0.3; // доля машин, которые едут прямо по разметке
-
-const COUNTDOWN_MS = 3000;
 
 type Obstacle = {
   sprite: Phaser.GameObjects.Image;
@@ -103,7 +86,7 @@ export class GameScene extends Phaser.Scene {
   private speed = 0;
   private distance = 0;
   private distanceSinceSpawn = 0;
-  private lives = START_LIVES;
+  private lives = GAME_CONFIG.startLives;
   private invulnerableUntil = 0;
   private nitroUntil = 0;
   private nitroReadyAt = 0;
@@ -132,12 +115,12 @@ export class GameScene extends Phaser.Scene {
     this.obstacles = [];
     this.finishLine = undefined;
     this.state = 'countdown';
-    this.raceStartAt = this.time.now + COUNTDOWN_MS;
+    this.raceStartAt = this.time.now + GAME_CONFIG.countdownMs;
     this.raceTime = 0;
     this.speed = 0;
     this.distance = 0;
     this.distanceSinceSpawn = 0;
-    this.lives = START_LIVES;
+    this.lives = GAME_CONFIG.startLives;
     this.invulnerableUntil = 0;
     this.nitroUntil = 0;
     this.nitroReadyAt = 0;
@@ -238,7 +221,7 @@ export class GameScene extends Phaser.Scene {
     this.add.rectangle(barX, barTop, 24, 6, 0xffffff).setDepth(10);
 
     // отметка начала фазы 2: участок трассы после неё подсвечен оранжевым
-    const phase2Y = barBottom - (barBottom - barTop) * PHASE_2_PROGRESS;
+    const phase2Y = barBottom - (barBottom - barTop) * GAME_CONFIG.phase2Progress;
     this.add.rectangle(barX, barTop, 8, phase2Y - barTop, 0x9e4a2a).setOrigin(0.5, 0).setDepth(10);
     this.add.rectangle(barX, phase2Y, 24, 6, 0xfeae34).setDepth(10);
     this.add
@@ -383,21 +366,21 @@ export class GameScene extends Phaser.Scene {
 
   private updateSpeed(time: number, seconds: number): void {
     if (Phaser.Input.Keyboard.JustDown(this.nitroKey) && time >= this.nitroReadyAt) {
-      this.nitroUntil = time + NITRO_DURATION_MS;
-      this.nitroReadyAt = time + NITRO_COOLDOWN_MS;
+      this.nitroUntil = time + GAME_CONFIG.nitroDurationMs;
+      this.nitroReadyAt = time + GAME_CONFIG.nitroCooldownMs;
       this.showPopup(this.player.x, this.player.y - 50, 'НИТРО!', '#94e2ff');
     }
 
     const hasNitro = time < this.nitroUntil;
-    const maxSpeed = hasNitro ? this.rules.maxSpeed * NITRO_SPEED_BONUS : this.rules.maxSpeed;
+    const maxSpeed = hasNitro ? this.rules.maxSpeed * GAME_CONFIG.nitroSpeedBonus : this.rules.maxSpeed;
 
-    if (hasNitro) this.speed += NITRO_ACCELERATION * seconds;
-    else if (this.isDown('up')) this.speed += ACCELERATION * seconds;
-    else if (this.isDown('down')) this.speed -= BRAKE * seconds;
-    else this.speed -= COAST_SLOWDOWN * seconds;
+    if (hasNitro) this.speed += GAME_CONFIG.nitroAcceleration * seconds;
+    else if (this.isDown('up')) this.speed += GAME_CONFIG.acceleration * seconds;
+    else if (this.isDown('down')) this.speed -= GAME_CONFIG.brake * seconds;
+    else this.speed -= GAME_CONFIG.coastSlowdown * seconds;
 
     // после нитро скорость плавно возвращается к обычному пределу
-    if (this.speed > maxSpeed) this.speed = Math.max(maxSpeed, this.speed - BRAKE * seconds);
+    if (this.speed > maxSpeed) this.speed = Math.max(maxSpeed, this.speed - GAME_CONFIG.brake * seconds);
     this.speed = Math.max(0, this.speed);
   }
 
@@ -406,7 +389,7 @@ export class GameScene extends Phaser.Scene {
     if (this.isDown('left')) dx -= 1;
     if (this.isDown('right')) dx += 1;
 
-    this.player.x += dx * STEER_SPEED * seconds;
+    this.player.x += dx * GAME_CONFIG.steerSpeed * seconds;
     this.player.angle = dx * STEER_TILT_DEG;
 
     const half = this.player.displayWidth / 2;
@@ -470,7 +453,7 @@ export class GameScene extends Phaser.Scene {
 
   private spawnCone(lane: number): void {
     // часть конусов стоит на разметке — иначе можно проехать весь уровень вдоль линии
-    const lineX = Math.random() < LINE_CONE_CHANCE ? this.freeLineX(lane) : undefined;
+    const lineX = Math.random() < GAME_CONFIG.lineConeChance ? this.freeLineX(lane) : undefined;
     const x = lineX ?? this.randomXInLane(lane, this.textures.getFrame('cone').width / 2);
     const sprite = this.add.image(x, SPAWN_Y, 'cone').setDepth(2);
     this.obstacles.push({ sprite, speed: 0 });
@@ -497,13 +480,13 @@ export class GameScene extends Phaser.Scene {
     const key = carTextureKey(color);
 
     // машина едет либо по разметке, либо со случайным сдвигом внутри полосы — не строго по центру
-    const halfWidth = (this.textures.getFrame(key).width * TRAFFIC_CAR_SCALE) / 2;
-    const lineX = Math.random() < LINE_CAR_CHANCE ? this.freeLineX(lane) : undefined;
+    const halfWidth = (this.textures.getFrame(key).width * GAME_CONFIG.trafficCarScale) / 2;
+    const lineX = Math.random() < GAME_CONFIG.lineCarChance ? this.freeLineX(lane) : undefined;
     const x = lineX ?? this.randomXInLane(lane, halfWidth);
 
     const sprite = this.add
       .image(x, SPAWN_Y, key)
-      .setScale(TRAFFIC_CAR_SCALE)
+      .setScale(GAME_CONFIG.trafficCarScale)
       .setDepth(2)
       .setFlipY(isOncoming);
 
@@ -516,8 +499,8 @@ export class GameScene extends Phaser.Scene {
   // --- Столкновения ---
 
   private hitbox(sprite: Phaser.GameObjects.Image): Phaser.Geom.Rectangle {
-    const w = sprite.displayWidth * HITBOX_SCALE;
-    const h = sprite.displayHeight * HITBOX_SCALE;
+    const w = sprite.displayWidth * GAME_CONFIG.hitboxScale;
+    const h = sprite.displayHeight * GAME_CONFIG.hitboxScale;
     return new Phaser.Geom.Rectangle(sprite.x - w / 2, sprite.y - h / 2, w, h);
   }
 
@@ -531,9 +514,9 @@ export class GameScene extends Phaser.Scene {
     if (!hit) return;
 
     this.lives -= 1;
-    this.speed *= CRASH_SPEED_FACTOR;
+    this.speed *= GAME_CONFIG.crashSpeedFactor;
     this.nitroUntil = 0;
-    this.invulnerableUntil = time + INVULNERABLE_MS;
+    this.invulnerableUntil = time + GAME_CONFIG.invulnerableMs;
     this.cameras.main.shake(200, 0.012);
     this.cameras.main.flash(150, 228, 59, 68);
     this.showPopup(this.player.x, this.player.y - 50, 'БАМ! -1 ♥', '#ff4d4d');
@@ -559,9 +542,9 @@ export class GameScene extends Phaser.Scene {
 
   // --- Фаза 2 ---
 
-  /** Фаза 2 начинается, когда пройдена доля трассы PHASE_2_PROGRESS (отметка на полосе прогресса). */
+  /** Фаза 2 начинается, когда пройдена доля трассы GAME_CONFIG.phase2Progress (отметка на полосе прогресса). */
   private checkPhase(): void {
-    if (this.phase === 1 && this.progress() >= PHASE_2_PROGRESS) this.enterPhase2();
+    if (this.phase === 1 && this.progress() >= GAME_CONFIG.phase2Progress) this.enterPhase2();
   }
 
   private enterPhase2(): void {

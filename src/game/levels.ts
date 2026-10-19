@@ -1,3 +1,4 @@
+import { GAME_CONFIG } from './gameConfig';
 import type { RoadTheme } from './pixelArt';
 
 export type LevelConfig = {
@@ -54,21 +55,16 @@ export const LEVELS: LevelConfig[] = [
   },
 ];
 
-// --- Фаза 2: при пороге прогресса по трассе правила меняются (до конца уровня) ---
-export const PHASE_2_PROGRESS = 0.5; // доля пройденной трассы: 0.5 — с середины уровня
-const PHASE_2_SPAWN_GAP_FACTOR = 0.6; // препятствия появляются на 40% чаще
-const PHASE_2_SPEED_FACTOR = 1.2; // предел скорости игрока +20%
-const PHASE_2_EXTRA_ONCOMING_LANES = 1; // встречка занимает ещё одну полосу
-const PHASE_2_MIN_ONCOMING_SPEED = 240; // на 1-м уровне встречки не было — задаём ей скорость
+// --- Фаза 2: числа баланса — в gameConfig.ts (phase2*) ---
 export const PHASE_2_ROAD_TINT = 0x8a96d8; // трасса темнеет — наступает вечер
 
 /** Правила уровня с поправками второй фазы. Сам уровень не меняется. */
 export function withPhase2(level: LevelConfig): LevelConfig {
   return {
     ...level,
-    maxSpeed: level.maxSpeed * PHASE_2_SPEED_FACTOR,
-    spawnGap: level.spawnGap * PHASE_2_SPAWN_GAP_FACTOR,
-    oncomingLanes: level.oncomingLanes + PHASE_2_EXTRA_ONCOMING_LANES,
-    oncomingSpeed: Math.max(level.oncomingSpeed, PHASE_2_MIN_ONCOMING_SPEED),
+    maxSpeed: level.maxSpeed * GAME_CONFIG.phase2SpeedFactor,
+    spawnGap: level.spawnGap * GAME_CONFIG.phase2SpawnGapFactor,
+    oncomingLanes: level.oncomingLanes + GAME_CONFIG.phase2ExtraOncomingLanes,
+    oncomingSpeed: Math.max(level.oncomingSpeed, GAME_CONFIG.phase2MinOncomingSpeed),
   };
 }
