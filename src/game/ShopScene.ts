@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CARS, findCar, loadSelectedCarId, saveSelectedCarId, type CarInfo } from './cars';
+import { NEW_RUN } from './GameScene';
 import { makeSpriteTextures } from './pixelArt';
 
 // --- Раскладка гаража ---
@@ -179,6 +180,6 @@ export class ShopScene extends Phaser.Scene {
     const car = CARS[this.selectedIndex] ?? CARS[0]!;
     saveSelectedCarId(car.id);
     this.registry.set('carId', car.id);
-    this.scene.start('GameScene', { levelIndex: 0, totalTime: 0 });
+    this.scene.start('GameScene', NEW_RUN);
   }
 }

@@ -51,10 +51,14 @@ type Obstacle = {
 
 type RaceState = 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
 
-type SceneData = {
-  levelIndex?: number;
-  totalTime?: number; // время прошлых уровней, мс
+/** Данные забега, которые переживают переход между уровнями и рестарт сцены. */
+export type RunData = {
+  levelIndex: number;
+  totalTime: number; // время прошлых уровней, мс
 };
+
+/** Начало новой игры: первый уровень, время с нуля. Используют гараж и рестарт после победы. */
+export const NEW_RUN: RunData = { levelIndex: 0, totalTime: 0 };
 
 const FONT = { fontFamily: '"Courier New", monospace', fontStyle: 'bold' };
 
@@ -118,7 +122,7 @@ export class GameScene extends Phaser.Scene {
     return ROAD_WIDTH / LANE_COUNT;
   }
 
-  create(data: SceneData): void {
+  create(data: Partial<RunData>): void {
     // create() вызывается и при scene.restart(), поэтому сбрасываем состояние здесь
     this.levelIndex = data.levelIndex ?? 0;
     this.totalTime = data.totalTime ?? 0;
@@ -149,7 +153,7 @@ export class GameScene extends Phaser.Scene {
     if (this.state === 'paused') return;
 
     if (this.state === 'crashed') {
-      if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.restartLevel(this.levelIndex);
+      if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.goToLevel(this.levelIndex);
       else if (Phaser.Input.Keyboard.JustDown(this.garageKey)) this.scene.start('ShopScene');
       return;
     }
@@ -618,11 +622,11 @@ export class GameScene extends Phaser.Scene {
   private handleFinishedInput(): void {
     const isLastLevel = this.levelIndex >= LEVELS.length - 1;
     if (isLastLevel && Phaser.Input.Keyboard.JustDown(this.restartKey)) {
-      this.restartLevel(0);
+      this.goToLevel(0);
     } else if (isLastLevel && Phaser.Input.Keyboard.JustDown(this.garageKey)) {
       this.scene.start('ShopScene');
     } else if (!isLastLevel && Phaser.Input.Keyboard.JustDown(this.nextKey)) {
-      this.scene.restart({ levelIndex: this.levelIndex + 1, totalTime: this.totalTime });
+      this.goToLevel(this.levelIndex + 1);
     }
   }
 
@@ -636,10 +640,14 @@ export class GameScene extends Phaser.Scene {
       .setVisible(true);
   }
 
-  private restartLevel(levelIndex: number): void {
-    // при перезапуске уровня время прошлых уровней сохраняется, при новой игре — обнуляется
-    const totalTime = levelIndex === 0 ? 0 : this.totalTime;
-    this.scene.restart({ levelIndex, totalTime });
+  /**
+   * Единственное место, где сцена перезапускается с данными забега:
+   * следующий уровень, повтор уровня после аварии и новая игра после победы.
+   * Уровень 0 — новая игра (NEW_RUN); иначе время пройденных уровней сохраняется.
+   */
+  private goToLevel(levelIndex: number): void {
+    const run: RunData = levelIndex === 0 ? NEW_RUN : { levelIndex, totalTime: this.totalTime };
+    this.scene.restart(run);
   }
 
   // --- Интерфейс ---
