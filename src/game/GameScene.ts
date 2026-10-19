@@ -38,6 +38,7 @@ const HITBOX_SCALE = 0.75; // хитбокс чуть меньше спрайт�
 const SPAWN_Y = -80;
 const FREE_LANE_ZONE_Y = 120; // полоса считается занятой, если там есть препятствие выше этой линии
 const DESPAWN_MARGIN = 200;
+const LINE_CONE_CHANCE = 0.35; // доля конусов, которые ставятся прямо на разметку между полосами
 
 const COUNTDOWN_MS = 3000;
 
@@ -437,8 +438,9 @@ export class GameScene extends Phaser.Scene {
 
   private isLaneFree(lane: number): boolean {
     const x = this.laneCenter(lane);
+    // <= : конус на разметке занимает обе соседние полосы, чтобы рядом не появилась «стена»
     return !this.obstacles.some(
-      (obstacle) => Math.abs(obstacle.sprite.x - x) < this.laneWidth / 2 && obstacle.sprite.y < FREE_LANE_ZONE_Y,
+      (obstacle) => Math.abs(obstacle.sprite.x - x) <= this.laneWidth / 2 && obstacle.sprite.y < FREE_LANE_ZONE_Y,
     );
   }
 
@@ -456,10 +458,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnCone(lane: number): void {
-    // конус стоит не строго по центру полосы — так интереснее объезжать
-    const offset = Phaser.Math.Between(-this.laneWidth / 4, this.laneWidth / 4);
-    const sprite = this.add.image(this.laneCenter(lane) + offset, SPAWN_Y, 'cone').setDepth(2);
+    // часть конусов стоит на разметке — иначе можно проехать весь уровень вдоль линии
+    const lineX = Math.random() < LINE_CONE_CHANCE ? this.freeLineX(lane) : undefined;
+    const x = lineX ?? this.randomXInLane(lane);
+    const sprite = this.add.image(x, SPAWN_Y, 'cone').setDepth(2);
     this.obstacles.push({ sprite, speed: 0 });
+  }
+
+  /** Случайное место в полосе от края до края (конус целиком на дороге) — перекрывает и обочину. */
+  private randomXInLane(lane: number): number {
+    const coneHalfWidth = this.textures.getFrame('cone').width / 2;
+    const maxOffset = this.laneWidth / 2 - coneHalfWidth;
+    return this.laneCenter(lane) + Phaser.Math.Between(-maxOffset, maxOffset);
+  }
+
+  /** Разметка слева или справа от полосы, если соседняя полоса тоже свободна; иначе undefined. */
+  private freeLineX(lane: number): number | undefined {
+    const lines: number[] = [];
+    if (lane > 0 && this.isLaneFree(lane - 1)) lines.push(lane); // линия между lane-1 и lane
+    if (lane < LANE_COUNT - 1 && this.isLaneFree(lane + 1)) lines.push(lane + 1); // между lane и lane+1
+    if (lines.length === 0) return undefined;
+    return this.roadLeft + Phaser.Utils.Array.GetRandom(lines) * this.laneWidth;
   }
 
   private spawnCar(lane: number): void {
