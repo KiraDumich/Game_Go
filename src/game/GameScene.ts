@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { findCar } from './cars';
-import { LEVELS, PHASE_2_ROAD_TINT, PHASE_2_SCORE, withPhase2, type LevelConfig } from './levels';
+import { LEVELS, PHASE_2_PROGRESS, PHASE_2_ROAD_TINT, withPhase2, type LevelConfig } from './levels';
 import {
   TRAFFIC_COLORS,
   carTextureKey,
@@ -47,7 +47,6 @@ const COUNTDOWN_MS = 3000;
 type Obstacle = {
   sprite: Phaser.GameObjects.Image;
   speed: number; // своя скорость вперёд; 0 — конус, < 0 — встречная машина
-  passed: boolean; // уже проехало мимо игрока (засчитано в счёт)
 };
 
 type RaceState = 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
@@ -55,7 +54,6 @@ type RaceState = 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
 type SceneData = {
   levelIndex?: number;
   totalTime?: number; // время прошлых уровней, мс
-  scoreBefore?: number; // объехано препятствий на прошлых уровнях
 };
 
 const FONT = { fontFamily: '"Courier New", monospace', fontStyle: 'bold' };
@@ -71,8 +69,6 @@ export class GameScene extends Phaser.Scene {
   private phase: 1 | 2 = 1;
   private levelIndex = 0;
   private totalTime = 0;
-  private scoreBefore = 0; // объехано на прошлых уровнях забега
-  private dodged = 0; // объехано на текущем уровне
   private bestTimes: number[] = [];
 
   private road!: Phaser.GameObjects.TileSprite;
@@ -94,7 +90,6 @@ export class GameScene extends Phaser.Scene {
   private nitroText!: Phaser.GameObjects.Text;
   private progressMarker!: Phaser.GameObjects.Rectangle;
   private centerText!: Phaser.GameObjects.Text;
-  private phaseText!: Phaser.GameObjects.Text;
   private phaseBanner!: Phaser.GameObjects.Text;
   private pauseOverlay!: Phaser.GameObjects.Container;
 
@@ -127,11 +122,9 @@ export class GameScene extends Phaser.Scene {
     // create() вызывается и при scene.restart(), поэтому сбрасываем состояние здесь
     this.levelIndex = data.levelIndex ?? 0;
     this.totalTime = data.totalTime ?? 0;
-    this.scoreBefore = data.scoreBefore ?? 0;
-    this.dodged = 0;
     this.level = LEVELS[this.levelIndex] ?? LEVELS[0]!;
     this.rules = this.level;
-    this.phase = 1; // если порог уже набран на прошлом уровне, фаза 2 включится на первом кадре гонки
+    this.phase = 1; // каждый уровень начинается с фазы 1, с середины трассы — фаза 2
     this.obstacles = [];
     this.finishLine = undefined;
     this.state = 'countdown';
@@ -178,12 +171,10 @@ export class GameScene extends Phaser.Scene {
     this.scrollWorld(seconds);
     this.spawnObstacles();
     this.checkCollisions(time);
-    this.countDodged(); // после столкновений: сбитое препятствие уже убрано и не засчитается
     this.checkPhase();
     this.checkFinish();
     this.updatePlayerLook(time);
     this.updateHud(time);
-    this.updatePhaseText();
   }
 
   // --- Создание сцены ---
@@ -226,7 +217,6 @@ export class GameScene extends Phaser.Scene {
     const leftX = 16;
     this.add.text(leftX, 16, this.level.name.replace(' — ', '\n'), small).setDepth(10);
     this.timeText = this.add.text(leftX, 80, '', big).setDepth(10);
-    this.phaseText = this.add.text(leftX, 140, '', small).setDepth(10);
     this.add
       .text(leftX, height - 82, '↑ газ  ↓ тормоз\n←→ руль  Space нитро\nP пауза', { ...small, fontSize: '14px' })
       .setDepth(10);
@@ -242,6 +232,15 @@ export class GameScene extends Phaser.Scene {
     const barBottom = height - 40;
     this.add.rectangle(barX, barTop, 8, barBottom - barTop, 0x1a1c2c).setOrigin(0.5, 0).setDepth(10);
     this.add.rectangle(barX, barTop, 24, 6, 0xffffff).setDepth(10);
+
+    // отметка начала фазы 2: участок трассы после неё подсвечен оранжевым
+    const phase2Y = barBottom - (barBottom - barTop) * PHASE_2_PROGRESS;
+    this.add.rectangle(barX, barTop, 8, phase2Y - barTop, 0x9e4a2a).setOrigin(0.5, 0).setDepth(10);
+    this.add.rectangle(barX, phase2Y, 24, 6, 0xfeae34).setDepth(10);
+    this.add
+      .text(barX - 18, phase2Y, 'ФАЗА 2', { ...small, fontSize: '12px', color: '#feae34' })
+      .setOrigin(1, 0.5)
+      .setDepth(10);
     this.progressMarker = this.add.rectangle(barX, barBottom, 20, 12, 0xe43b44).setDepth(11);
     this.progressMarker.setData('top', barTop).setData('bottom', barBottom);
 
@@ -272,7 +271,6 @@ export class GameScene extends Phaser.Scene {
 
     this.createPauseOverlay();
     this.updateHud(this.time.now);
-    this.updatePhaseText();
   }
 
   /** Затемнение экрана и надпись PAUSE — поверх всего, скрыто до нажатия P. */
@@ -471,7 +469,7 @@ export class GameScene extends Phaser.Scene {
     const lineX = Math.random() < LINE_CONE_CHANCE ? this.freeLineX(lane) : undefined;
     const x = lineX ?? this.randomXInLane(lane, this.textures.getFrame('cone').width / 2);
     const sprite = this.add.image(x, SPAWN_Y, 'cone').setDepth(2);
-    this.obstacles.push({ sprite, speed: 0, passed: false });
+    this.obstacles.push({ sprite, speed: 0 });
   }
 
   /** Случайное место в полосе от края до края (препятствие целиком в полосе) — перекрывает и обочину. */
@@ -508,7 +506,7 @@ export class GameScene extends Phaser.Scene {
     const speed = isOncoming
       ? -this.rules.oncomingSpeed
       : Phaser.Math.Between(this.rules.trafficMinSpeed, this.rules.trafficMaxSpeed);
-    this.obstacles.push({ sprite, speed, passed: false });
+    this.obstacles.push({ sprite, speed });
   }
 
   // --- Столкновения ---
@@ -557,25 +555,9 @@ export class GameScene extends Phaser.Scene {
 
   // --- Фаза 2 ---
 
-  /** Счёт забега: сколько препятствий объехано на прошлых уровнях и на текущем. */
-  private score(): number {
-    return this.scoreBefore + this.dodged;
-  }
-
-  /** Препятствие засчитывается, когда целиком проехало ниже машины игрока без удара. */
-  private countDodged(): void {
-    const playerBottom = this.player.y + this.player.displayHeight / 2;
-    for (const obstacle of this.obstacles) {
-      const top = obstacle.sprite.y - obstacle.sprite.displayHeight / 2;
-      if (!obstacle.passed && top > playerBottom) {
-        obstacle.passed = true;
-        this.dodged += 1;
-      }
-    }
-  }
-
+  /** Фаза 2 начинается, когда пройдена доля трассы PHASE_2_PROGRESS (отметка на полосе прогресса). */
   private checkPhase(): void {
-    if (this.phase === 1 && this.score() >= PHASE_2_SCORE) this.enterPhase2();
+    if (this.phase === 1 && this.progress() >= PHASE_2_PROGRESS) this.enterPhase2();
   }
 
   private enterPhase2(): void {
@@ -594,14 +576,6 @@ export class GameScene extends Phaser.Scene {
       duration: 500,
       onComplete: () => this.phaseBanner.setVisible(false),
     });
-  }
-
-  private updatePhaseText(): void {
-    if (this.phase === 2) {
-      this.phaseText.setText(`ФАЗА 2 · объехано ${this.score()}`).setColor('#feae34');
-      return;
-    }
-    this.phaseText.setText(`Объехано ${this.score()} / ${PHASE_2_SCORE} до фазы 2`).setColor('#ffffff');
   }
 
   // --- Финиш и конец уровня ---
@@ -648,7 +622,7 @@ export class GameScene extends Phaser.Scene {
     } else if (isLastLevel && Phaser.Input.Keyboard.JustDown(this.garageKey)) {
       this.scene.start('ShopScene');
     } else if (!isLastLevel && Phaser.Input.Keyboard.JustDown(this.nextKey)) {
-      this.scene.restart({ levelIndex: this.levelIndex + 1, totalTime: this.totalTime, scoreBefore: this.score() });
+      this.scene.restart({ levelIndex: this.levelIndex + 1, totalTime: this.totalTime });
     }
   }
 
@@ -663,11 +637,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restartLevel(levelIndex: number): void {
-    // при перезапуске уровня время и счёт прошлых уровней сохраняются, при новой игре — обнуляются
-    const isNewGame = levelIndex === 0;
-    const totalTime = isNewGame ? 0 : this.totalTime;
-    const scoreBefore = isNewGame ? 0 : this.scoreBefore;
-    this.scene.restart({ levelIndex, totalTime, scoreBefore });
+    // при перезапуске уровня время прошлых уровней сохраняется, при новой игре — обнуляется
+    const totalTime = levelIndex === 0 ? 0 : this.totalTime;
+    this.scene.restart({ levelIndex, totalTime });
   }
 
   // --- Интерфейс ---

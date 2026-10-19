@@ -27,7 +27,7 @@ export const CARS: CarInfo[] = [
     description: 'Старая добрая\nкрасная машинка',
     price: 0,
     topKey: carTextureKey('player'),
-    topScale: 1,
+    topScale: 1.5, // 40×64 → 60×96, как машины соперников
   },
   {
     id: 'kaze',
@@ -36,7 +36,7 @@ export const CARS: CarInfo[] = [
     price: 0,
     topKey: 'car-kaze-top',
     topUrl: kazeTopUrl,
-    topScale: 2,
+    topScale: 3, // ~18×36 → ~54×108, примерно как машины соперников (60×96)
     selectKey: 'car-kaze-select',
     selectUrl: kazeSelectUrl,
   },
@@ -47,7 +47,7 @@ export const CARS: CarInfo[] = [
     price: 0,
     topKey: 'car-raijin-top',
     topUrl: raijinTopUrl,
-    topScale: 2,
+    topScale: 3, // ~18×36 → ~54×108, примерно как машины соперников (60×96)
     selectKey: 'car-raijin-select',
     selectUrl: raijinSelectUrl,
   },
@@ -58,7 +58,7 @@ export const CARS: CarInfo[] = [
     price: 0,
     topKey: 'car-kuro-top',
     topUrl: kuroTopUrl,
-    topScale: 2,
+    topScale: 3, // ~18×36 → ~54×108, примерно как машины соперников (60×96)
     selectKey: 'car-kuro-select',
     selectUrl: kuroSelectUrl,
   },
@@ -69,7 +69,7 @@ export const CARS: CarInfo[] = [
     price: 0,
     topKey: 'car-hono-top',
     topUrl: honoTopUrl,
-    topScale: 2,
+    topScale: 3, // ~18×36 → ~54×108, примерно как машины соперников (60×96)
     selectKey: 'car-hono-select',
     selectUrl: honoSelectUrl,
   },
