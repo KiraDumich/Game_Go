@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { findCar } from './cars';
-import { LEVELS, type LevelConfig } from './levels';
+import { LEVELS, PHASE_2_ROAD_TINT, PHASE_2_START_MS, withPhase2, type LevelConfig } from './levels';
 import {
   TRAFFIC_COLORS,
   carTextureKey,
@@ -62,6 +62,8 @@ const FONT = { fontFamily: '"Courier New", monospace', fontStyle: 'bold' };
  */
 export class GameScene extends Phaser.Scene {
   private level!: LevelConfig;
+  private rules!: LevelConfig; // действующие правила: уровень, а с фазы 2 — с её поправками
+  private phase: 1 | 2 = 1;
   private levelIndex = 0;
   private totalTime = 0;
   private bestTimes: number[] = [];
@@ -85,6 +87,8 @@ export class GameScene extends Phaser.Scene {
   private nitroText!: Phaser.GameObjects.Text;
   private progressMarker!: Phaser.GameObjects.Rectangle;
   private centerText!: Phaser.GameObjects.Text;
+  private phaseText!: Phaser.GameObjects.Text;
+  private phaseBanner!: Phaser.GameObjects.Text;
   private pauseOverlay!: Phaser.GameObjects.Container;
 
   private state: RaceState = 'countdown';
@@ -117,6 +121,8 @@ export class GameScene extends Phaser.Scene {
     this.levelIndex = data.levelIndex ?? 0;
     this.totalTime = data.totalTime ?? 0;
     this.level = LEVELS[this.levelIndex] ?? LEVELS[0]!;
+    this.rules = this.level;
+    this.phase = 1; // если минута уже прошла, фаза 2 включится на первом кадре гонки
     this.obstacles = [];
     this.finishLine = undefined;
     this.state = 'countdown';
@@ -158,6 +164,7 @@ export class GameScene extends Phaser.Scene {
 
     const seconds = delta / 1000;
     this.raceTime += delta;
+    this.checkPhase();
     this.updateSpeed(time, seconds);
     this.steer(seconds);
     this.scrollWorld(seconds);
@@ -166,6 +173,7 @@ export class GameScene extends Phaser.Scene {
     this.checkFinish();
     this.updatePlayerLook(time);
     this.updateHud(time);
+    this.updatePhaseText();
   }
 
   // --- Создание сцены ---
@@ -208,6 +216,7 @@ export class GameScene extends Phaser.Scene {
     const leftX = 16;
     this.add.text(leftX, 16, this.level.name.replace(' — ', '\n'), small).setDepth(10);
     this.timeText = this.add.text(leftX, 80, '', big).setDepth(10);
+    this.phaseText = this.add.text(leftX, 140, '', small).setDepth(10);
     this.add
       .text(leftX, height - 82, '↑ газ  ↓ тормоз\n←→ руль  Space нитро\nP пауза', { ...small, fontSize: '14px' })
       .setDepth(10);
@@ -238,8 +247,22 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(20);
 
+    this.phaseBanner = this.add
+      .text(width / 2, height / 3, 'ФАЗА 2\nВечер: больше препятствий,\nвстречка и скорость выше!', {
+        ...FONT,
+        fontSize: '24px',
+        color: '#feae34',
+        align: 'center',
+        stroke: '#1a1c2c',
+        strokeThickness: 6,
+      })
+      .setOrigin(0.5)
+      .setDepth(25)
+      .setVisible(false);
+
     this.createPauseOverlay();
     this.updateHud(this.time.now);
+    this.updatePhaseText();
   }
 
   /** Затемнение экрана и надпись PAUSE — поверх всего, скрыто до нажатия P. */
@@ -354,7 +377,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const hasNitro = time < this.nitroUntil;
-    const maxSpeed = hasNitro ? this.level.maxSpeed * NITRO_SPEED_BONUS : this.level.maxSpeed;
+    const maxSpeed = hasNitro ? this.rules.maxSpeed * NITRO_SPEED_BONUS : this.rules.maxSpeed;
 
     if (hasNitro) this.speed += NITRO_ACCELERATION * seconds;
     else if (this.isDown('up')) this.speed += ACCELERATION * seconds;
@@ -420,7 +443,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnObstacles(): void {
-    if (this.finishLine || this.distanceSinceSpawn < this.level.spawnGap) return;
+    if (this.finishLine || this.distanceSinceSpawn < this.rules.spawnGap) return;
     this.distanceSinceSpawn = 0;
 
     const lanes = Array.from({ length: LANE_COUNT }, (_, lane) => lane);
@@ -428,7 +451,7 @@ export class GameScene extends Phaser.Scene {
     if (freeLanes.length === 0) return;
     const lane = Phaser.Utils.Array.GetRandom(freeLanes);
 
-    if (Math.random() < this.level.coneChance) this.spawnCone(lane);
+    if (Math.random() < this.rules.coneChance) this.spawnCone(lane);
     else this.spawnCar(lane);
   }
 
@@ -440,7 +463,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnCar(lane: number): void {
-    const isOncoming = lane < this.level.oncomingLanes;
+    const isOncoming = lane < this.rules.oncomingLanes;
     const color = Phaser.Utils.Array.GetRandom(TRAFFIC_COLORS);
     const sprite = this.add
       .image(this.laneCenter(lane), SPAWN_Y, carTextureKey(color))
@@ -448,8 +471,8 @@ export class GameScene extends Phaser.Scene {
       .setFlipY(isOncoming);
 
     const speed = isOncoming
-      ? -this.level.oncomingSpeed
-      : Phaser.Math.Between(this.level.trafficMinSpeed, this.level.trafficMaxSpeed);
+      ? -this.rules.oncomingSpeed
+      : Phaser.Math.Between(this.rules.trafficMinSpeed, this.rules.trafficMaxSpeed);
     this.obstacles.push({ sprite, speed });
   }
 
@@ -495,6 +518,44 @@ export class GameScene extends Phaser.Scene {
       duration: 400,
       onComplete: () => obstacle.sprite.destroy(),
     });
+  }
+
+  // --- Фаза 2 ---
+
+  /** Время игры: пройденные уровни + текущий (паузы и отсчёт не считаются). */
+  private sessionTime(): number {
+    return this.totalTime + this.raceTime;
+  }
+
+  private checkPhase(): void {
+    if (this.phase === 1 && this.sessionTime() >= PHASE_2_START_MS) this.enterPhase2();
+  }
+
+  private enterPhase2(): void {
+    this.phase = 2;
+    this.rules = withPhase2(this.level);
+    this.road.setTint(PHASE_2_ROAD_TINT);
+    this.cameras.main.flash(300, 254, 174, 52);
+
+    // надпись «ФАЗА 2» выпрыгивает, держится и исчезает
+    this.phaseBanner.setVisible(true).setAlpha(1).setScale(0.5);
+    this.tweens.add({ targets: this.phaseBanner, scale: 1, duration: 300, ease: 'Back.Out' });
+    this.tweens.add({
+      targets: this.phaseBanner,
+      alpha: 0,
+      delay: 2500,
+      duration: 500,
+      onComplete: () => this.phaseBanner.setVisible(false),
+    });
+  }
+
+  private updatePhaseText(): void {
+    if (this.phase === 2) {
+      this.phaseText.setText('ФАЗА 2').setColor('#feae34');
+      return;
+    }
+    const left = Math.max(0, PHASE_2_START_MS - this.sessionTime());
+    this.phaseText.setText(`Фаза 1 · до фазы 2 ${formatTime(left)}`).setColor('#ffffff');
   }
 
   // --- Финиш и конец уровня ---
