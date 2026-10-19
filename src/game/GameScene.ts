@@ -39,6 +39,8 @@ const SPAWN_Y = -80;
 const FREE_LANE_ZONE_Y = 120; // полоса считается занятой, если там есть препятствие выше этой линии
 const DESPAWN_MARGIN = 200;
 const LINE_CONE_CHANCE = 0.35; // доля конусов, которые ставятся прямо на разметку между полосами
+const TRAFFIC_CAR_SCALE = 1.5; // машины соперников крупнее: 40×64 → 60×96, занимают больше места
+const LINE_CAR_CHANCE = 0.3; // доля машин, которые едут прямо по разметке
 
 const COUNTDOWN_MS = 3000;
 
@@ -460,15 +462,14 @@ export class GameScene extends Phaser.Scene {
   private spawnCone(lane: number): void {
     // часть конусов стоит на разметке — иначе можно проехать весь уровень вдоль линии
     const lineX = Math.random() < LINE_CONE_CHANCE ? this.freeLineX(lane) : undefined;
-    const x = lineX ?? this.randomXInLane(lane);
+    const x = lineX ?? this.randomXInLane(lane, this.textures.getFrame('cone').width / 2);
     const sprite = this.add.image(x, SPAWN_Y, 'cone').setDepth(2);
     this.obstacles.push({ sprite, speed: 0 });
   }
 
-  /** Случайное место в полосе от края до края (конус целиком на дороге) — перекрывает и обочину. */
-  private randomXInLane(lane: number): number {
-    const coneHalfWidth = this.textures.getFrame('cone').width / 2;
-    const maxOffset = this.laneWidth / 2 - coneHalfWidth;
+  /** Случайное место в полосе от края до края (препятствие целиком в полосе) — перекрывает и обочину. */
+  private randomXInLane(lane: number, halfWidth: number): number {
+    const maxOffset = Math.max(0, this.laneWidth / 2 - halfWidth);
     return this.laneCenter(lane) + Phaser.Math.Between(-maxOffset, maxOffset);
   }
 
@@ -484,8 +485,16 @@ export class GameScene extends Phaser.Scene {
   private spawnCar(lane: number): void {
     const isOncoming = lane < this.rules.oncomingLanes;
     const color = Phaser.Utils.Array.GetRandom(TRAFFIC_COLORS);
+    const key = carTextureKey(color);
+
+    // машина едет либо по разметке, либо со случайным сдвигом внутри полосы — не строго по центру
+    const halfWidth = (this.textures.getFrame(key).width * TRAFFIC_CAR_SCALE) / 2;
+    const lineX = Math.random() < LINE_CAR_CHANCE ? this.freeLineX(lane) : undefined;
+    const x = lineX ?? this.randomXInLane(lane, halfWidth);
+
     const sprite = this.add
-      .image(this.laneCenter(lane), SPAWN_Y, carTextureKey(color))
+      .image(x, SPAWN_Y, key)
+      .setScale(TRAFFIC_CAR_SCALE)
       .setDepth(2)
       .setFlipY(isOncoming);
 
