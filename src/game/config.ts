@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GameScene } from './GameScene';
+import { ShopScene } from './ShopScene';
 
 export function createGame(parent: string): Phaser.Game {
   const config: Phaser.Types.Core.GameConfig = {
@@ -7,8 +8,9 @@ export function createGame(parent: string): Phaser.Game {
     parent,
     width: 960,
     height: 640,
-    backgroundColor: '#0f172a',
-    scene: [GameScene],
+    backgroundColor: '#1a1c2c',
+    pixelArt: true, // без сглаживания — чёткие пиксели
+    scene: [ShopScene, GameScene], // первой запускается гараж
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
