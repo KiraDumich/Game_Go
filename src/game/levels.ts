@@ -12,6 +12,7 @@ export type LevelConfig = {
   oncomingLanes: number; // сколько левых полос занято встречкой (0 — встречки нет)
   oncomingSpeed: number; // скорость встречных машин, px/с
   roadworks: number; // сколько участков дорожных работ на уровне (равномерно по трассе)
+  phase2: boolean; // включается ли с середины трассы фаза 2 (вечер, больше препятствий)
   tutorial?: LevelTutorial; // подсказка перед первым стартом уровня
   theme: RoadTheme;
 };
@@ -25,7 +26,7 @@ export type LevelTutorial = {
 export const LEVELS: LevelConfig[] = [
   {
     name: 'Уровень 1 — Загородное шоссе',
-    length: 20000,
+    length: 14000,
     maxSpeed: 520,
     spawnGap: 260,
     coneChance: 0.45,
@@ -34,6 +35,7 @@ export const LEVELS: LevelConfig[] = [
     oncomingLanes: 0,
     oncomingSpeed: 0,
     roadworks: 0,
+    phase2: false,
     theme: {
       side: 0x3e8948,
       sideDark: 0x265c42,
@@ -45,7 +47,7 @@ export const LEVELS: LevelConfig[] = [
   },
   {
     name: 'Уровень 2 — Пустынная трасса',
-    length: 30000,
+    length: 20000,
     maxSpeed: 640,
     spawnGap: 200,
     coneChance: 0.3,
@@ -54,6 +56,7 @@ export const LEVELS: LevelConfig[] = [
     oncomingLanes: 1,
     oncomingSpeed: 220,
     roadworks: 0,
+    phase2: true, // вторая волна (вечер) с середины трассы — только на этом уровне
     theme: {
       side: 0xe4a672,
       sideDark: 0xb86f50,
@@ -65,7 +68,7 @@ export const LEVELS: LevelConfig[] = [
   },
   {
     name: 'Уровень 3 — Ремонт трассы',
-    length: 30000,
+    length: 20000,
     maxSpeed: 600,
     spawnGap: 230,
     coneChance: 0.35,
@@ -74,6 +77,7 @@ export const LEVELS: LevelConfig[] = [
     oncomingLanes: 1,
     oncomingSpeed: 230,
     roadworks: 3,
+    phase2: false,
     tutorial: {
       title: 'ДОРОЖНЫЕ РАБОТЫ',
       text:

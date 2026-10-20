@@ -250,14 +250,16 @@ export class GameScene extends Phaser.Scene {
     this.add.rectangle(barX, barTop, 8, barBottom - barTop, 0x1a1c2c).setOrigin(0.5, 0).setDepth(10);
     this.add.rectangle(barX, barTop, 24, 6, 0xffffff).setDepth(10);
 
-    // отметка начала фазы 2: участок трассы после неё подсвечен оранжевым
-    const phase2Y = barBottom - (barBottom - barTop) * GAME_CONFIG.phase2Progress;
-    this.add.rectangle(barX, barTop, 8, phase2Y - barTop, 0x9e4a2a).setOrigin(0.5, 0).setDepth(10);
-    this.add.rectangle(barX, phase2Y, 24, 6, 0xfeae34).setDepth(10);
-    this.add
-      .text(barX - 18, phase2Y, 'ФАЗА 2', { ...small, fontSize: '12px', color: '#feae34' })
-      .setOrigin(1, 0.5)
-      .setDepth(10);
+    // отметка начала фазы 2 (только на уровнях с фазой 2): участок после неё подсвечен оранжевым
+    if (this.level.phase2) {
+      const phase2Y = barBottom - (barBottom - barTop) * GAME_CONFIG.phase2Progress;
+      this.add.rectangle(barX, barTop, 8, phase2Y - barTop, 0x9e4a2a).setOrigin(0.5, 0).setDepth(10);
+      this.add.rectangle(barX, phase2Y, 24, 6, 0xfeae34).setDepth(10);
+      this.add
+        .text(barX - 18, phase2Y, 'ФАЗА 2', { ...small, fontSize: '12px', color: '#feae34' })
+        .setOrigin(1, 0.5)
+        .setDepth(10);
+    }
     this.progressMarker = this.add.rectangle(barX, barBottom, 20, 12, 0xe43b44).setDepth(11);
     this.progressMarker.setData('top', barTop).setData('bottom', barBottom);
 
@@ -697,8 +699,12 @@ export class GameScene extends Phaser.Scene {
 
   // --- Фаза 2 ---
 
-  /** Фаза 2 начинается, когда пройдена доля трассы GAME_CONFIG.phase2Progress (отметка на полосе прогресса). */
+  /**
+   * Фаза 2 есть только на уровнях с phase2: true (levels.ts) и начинается,
+   * когда пройдена доля трассы GAME_CONFIG.phase2Progress (отметка на полосе прогресса).
+   */
   private checkPhase(): void {
+    if (!this.level.phase2) return;
     if (this.phase === 1 && this.progress() >= GAME_CONFIG.phase2Progress) this.enterPhase2();
   }
 
