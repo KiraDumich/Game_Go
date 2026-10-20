@@ -11,7 +11,15 @@ export type LevelConfig = {
   trafficMaxSpeed: number;
   oncomingLanes: number; // сколько левых полос занято встречкой (0 — встречки нет)
   oncomingSpeed: number; // скорость встречных машин, px/с
+  roadworks: number; // сколько участков дорожных работ на уровне (равномерно по трассе)
+  tutorial?: LevelTutorial; // подсказка перед первым стартом уровня
   theme: RoadTheme;
+};
+
+export type LevelTutorial = {
+  title: string;
+  text: string;
+  icons: string[]; // ключи текстур, которые показываются в подсказке
 };
 
 export const LEVELS: LevelConfig[] = [
@@ -25,6 +33,7 @@ export const LEVELS: LevelConfig[] = [
     trafficMaxSpeed: 260,
     oncomingLanes: 0,
     oncomingSpeed: 0,
+    roadworks: 0,
     theme: {
       side: 0x3e8948,
       sideDark: 0x265c42,
@@ -44,6 +53,7 @@ export const LEVELS: LevelConfig[] = [
     trafficMaxSpeed: 320,
     oncomingLanes: 1,
     oncomingSpeed: 220,
+    roadworks: 0,
     theme: {
       side: 0xe4a672,
       sideDark: 0xb86f50,
@@ -51,6 +61,37 @@ export const LEVELS: LevelConfig[] = [
       curbB: 0xf77622,
       asphalt: 0x5a6988,
       line: 0xfee761,
+    },
+  },
+  {
+    name: 'Уровень 3 — Ремонт трассы',
+    length: 30000,
+    maxSpeed: 600,
+    spawnGap: 230,
+    coneChance: 0.35,
+    trafficMinSpeed: 180,
+    trafficMaxSpeed: 300,
+    oncomingLanes: 1,
+    oncomingSpeed: 230,
+    roadworks: 3,
+    tutorial: {
+      title: 'ДОРОЖНЫЕ РАБОТЫ',
+      text:
+        'На этой трассе три участка ремонта.\n' +
+        'Знак и жёлтая стрелка заранее предупреждают:\n' +
+        'впереди перекрыта полоса — перестройся туда,\n' +
+        'куда показывает стрелка.\n\n' +
+        'Барьеры, техника и рабочие не отлетают от удара,\n' +
+        'в них врезаться больнее, чем в конус!',
+      icons: ['rw_sign_works', 'rw_sign_arrow', 'rw_barrier_1', 'rw_worker_0'],
+    },
+    theme: {
+      side: 0xc0cbdc, // бетон промзоны
+      sideDark: 0x8b9bb4,
+      curbA: 0xffffff,
+      curbB: 0xf77622,
+      asphalt: 0x3a4466,
+      line: 0xfee761, // жёлтая временная разметка — как на ремонте
     },
   },
 ];

@@ -36,4 +36,10 @@ export const GAME_CONFIG = {
   phase2SpeedFactor: 1.2, // предел скорости игрока +20%
   phase2ExtraOncomingLanes: 1, // встречка занимает ещё одну полосу
   phase2MinOncomingSpeed: 240, // на 1-м уровне встречки не было — задаём ей скорость
+
+  // --- Дорожные работы (сколько участков на уровне — в levels.ts, поле roadworks) ---
+  roadworksLength: 1100, // длина перекрытого участка между барьерами, px трассы
+  roadworksSignLead: 300, // знаки стоят за столько px до первого барьера
+  roadworksConeGap: 90, // шаг конусов вдоль перекрытой полосы, px
+  roadworksSpriteScale: 4, // 1 пиксель спрайта дорожных работ = 4 px экрана (как конус)
 };

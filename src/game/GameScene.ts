@@ -9,6 +9,7 @@ import {
   makeRoadTexture,
   makeSpriteTextures,
 } from './pixelArt';
+import { createRoadworksAnimations, loadRoadworksAssets, roadworksLayout } from './roadworks';
 
 // --- Трасса ---
 const ROAD_WIDTH = 480;
@@ -26,13 +27,20 @@ const SPEED_TO_KMH = 0.4; // перевод скорости в «км/ч» дл
 const SPAWN_Y = -80;
 const FREE_LANE_ZONE_Y = 120; // полоса считается занятой, если там есть препятствие выше этой линии
 const DESPAWN_MARGIN = 200;
+const DETOUR_MS = 1200; // за сколько попутная машина перестраивается из перекрытой полосы
+
+type ObstacleSprite = Phaser.GameObjects.Image | Phaser.GameObjects.Sprite;
 
 type Obstacle = {
-  sprite: Phaser.GameObjects.Image;
+  sprite: ObstacleSprite;
   speed: number; // своя скорость вперёд; 0 — конус, < 0 — встречная машина
+  fixed?: boolean; // тяжёлое (барьер, техника, рабочий): не отлетает от удара
+  decor?: boolean; // только картинка (разрытый асфальт): не сталкивается
 };
 
-type RaceState = 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
+type RaceState = 'tutorial' | 'countdown' | 'racing' | 'paused' | 'crashed' | 'finished';
+
+const TUTORIAL_ICON_SPACING = 150; // расстояние между картинками в подсказке, px
 
 /** Данные забега, которые переживают переход между уровнями и рестарт сцены. */
 export type RunData = {
@@ -48,7 +56,7 @@ const FONT = { fontFamily: '"Courier New", monospace', fontStyle: 'bold' };
 /**
  * «Пиксельные гонки»: вид сверху, едем по трассе и объезжаем конусы и машины.
  * ↑ — газ, ↓ — тормоз, ←/→ — руль, Space — нитро, P — пауза.
- * 2 уровня, 3 жизни на уровень, R — заново, M — гараж (выбор машины).
+ * 3 уровня (на 3-м — дорожные работы), 3 жизни на уровень, R — заново, M — гараж (выбор машины).
  */
 export class GameScene extends Phaser.Scene {
   private level!: LevelConfig;
@@ -57,6 +65,7 @@ export class GameScene extends Phaser.Scene {
   private levelIndex = 0;
   private totalTime = 0;
   private bestTimes: number[] = [];
+  private seenTutorials = new Set<number>(); // подсказка уровня показывается один раз за сессию
 
   private road!: Phaser.GameObjects.TileSprite;
   private player!: Phaser.GameObjects.Image;
@@ -79,6 +88,7 @@ export class GameScene extends Phaser.Scene {
   private centerText!: Phaser.GameObjects.Text;
   private phaseBanner!: Phaser.GameObjects.Text;
   private pauseOverlay!: Phaser.GameObjects.Container;
+  private tutorialPanel?: Phaser.GameObjects.Container;
 
   private state: RaceState = 'countdown';
   private raceStartAt = 0;
@@ -92,9 +102,16 @@ export class GameScene extends Phaser.Scene {
   private nitroReadyAt = 0;
   private pausedAt = 0; // момент, когда нажали паузу
   private stateBeforePause: RaceState = 'racing'; // куда вернуться после паузы
+  private nextRoadworks = 0; // какой по счёту участок дорожных работ появится следующим
+  private closedLane = -1; // полоса, перекрытая дорожными работами (-1 — нет)
+  private closedLaneEnd?: ObstacleSprite; // последний барьер участка: пока он выше экрана, полоса закрыта
 
   constructor() {
     super('GameScene');
+  }
+
+  preload(): void {
+    loadRoadworksAssets(this);
   }
 
   private get roadLeft(): number {
@@ -124,16 +141,28 @@ export class GameScene extends Phaser.Scene {
     this.invulnerableUntil = 0;
     this.nitroUntil = 0;
     this.nitroReadyAt = 0;
+    this.nextRoadworks = 0;
+    this.closedLane = -1;
+    this.closedLaneEnd = undefined;
+    this.tutorialPanel = undefined;
 
     this.createTextures();
+    createRoadworksAnimations(this);
     this.createWorld();
     this.createHud();
     this.createInput();
+
+    if (this.level.tutorial && !this.seenTutorials.has(this.levelIndex)) this.showTutorial();
   }
 
   update(time: number, delta: number): void {
     if (Phaser.Input.Keyboard.JustDown(this.pauseKey)) this.togglePause(time);
     if (this.state === 'paused') return;
+
+    if (this.state === 'tutorial') {
+      this.handleTutorialInput(time);
+      return;
+    }
 
     if (this.state === 'crashed') {
       if (Phaser.Input.Keyboard.JustDown(this.restartKey)) this.goToLevel(this.levelIndex);
@@ -157,6 +186,7 @@ export class GameScene extends Phaser.Scene {
     this.steer(seconds);
     this.scrollWorld(seconds);
     this.spawnObstacles();
+    this.spawnRoadworks();
     this.checkCollisions(time);
     this.checkPhase();
     this.checkFinish();
@@ -324,6 +354,7 @@ export class GameScene extends Phaser.Scene {
     this.state = 'paused';
     this.pausedAt = time;
     this.tweens.pauseAll(); // замирают всплывающие надписи и отлетающие препятствия
+    this.anims.pauseAll(); // и мигалки с рабочими
     this.centerText.setVisible(false); // отсчёт 3-2-1 не должен наезжать на PAUSE; updateCountdown покажет его снова
     this.pauseOverlay.setVisible(true);
   }
@@ -339,8 +370,59 @@ export class GameScene extends Phaser.Scene {
 
     this.forgetKeyPresses();
     this.tweens.resumeAll();
+    this.anims.resumeAll();
     this.pauseOverlay.setVisible(false);
     this.state = this.stateBeforePause;
+  }
+
+  // --- Подсказка перед уровнем ---
+
+  /** Затемнение с заголовком, картинками и текстом из levels.ts; гонка ждёт Enter. */
+  private showTutorial(): void {
+    const tutorial = this.level.tutorial;
+    if (!tutorial) return;
+    this.state = 'tutorial';
+
+    const { width, height } = this.scale;
+    const shade = this.add.rectangle(0, 0, width, height, 0x1a1c2c, 0.88).setOrigin(0, 0);
+    const title = this.add
+      .text(width / 2, 80, tutorial.title, {
+        ...FONT,
+        fontSize: '40px',
+        color: '#feae34',
+        stroke: '#1a1c2c',
+        strokeThickness: 6,
+      })
+      .setOrigin(0.5);
+    const firstIconX = width / 2 - ((tutorial.icons.length - 1) * TUTORIAL_ICON_SPACING) / 2;
+    const icons = tutorial.icons.map((key, i) =>
+      this.add.image(firstIconX + i * TUTORIAL_ICON_SPACING, 180, key).setScale(GAME_CONFIG.roadworksSpriteScale),
+    );
+    const text = this.add
+      .text(width / 2, 250, tutorial.text, { ...FONT, fontSize: '20px', color: '#ffffff', align: 'center', lineSpacing: 6 })
+      .setOrigin(0.5, 0);
+    const hint = this.add
+      .text(width / 2, height - 70, 'Enter — понятно, поехали!', {
+        ...FONT,
+        fontSize: '22px',
+        color: '#1a1c2c',
+        backgroundColor: '#fee761',
+        padding: { x: 14, y: 8 },
+      })
+      .setOrigin(0.5);
+
+    this.tutorialPanel = this.add.container(0, 0, [shade, title, ...icons, text, hint]).setDepth(28);
+  }
+
+  private handleTutorialInput(time: number): void {
+    if (!Phaser.Input.Keyboard.JustDown(this.nextKey)) return;
+
+    this.seenTutorials.add(this.levelIndex);
+    this.tutorialPanel?.destroy();
+    this.tutorialPanel = undefined;
+    this.forgetKeyPresses();
+    this.state = 'countdown';
+    this.raceStartAt = time + GAME_CONFIG.countdownMs; // отсчёт 3-2-1 начинается после подсказки
   }
 
   // --- Старт ---
@@ -417,10 +499,11 @@ export class GameScene extends Phaser.Scene {
       obstacle.sprite.y += (this.speed - obstacle.speed) * seconds;
     }
 
-    // убираем всё, что уехало за экран
+    // убираем всё, что уехало за экран. Сверху уезжают только машины быстрее игрока:
+    // дорожные работы появляются целиком далеко над экраном и сами едут вниз
     this.obstacles = this.obstacles.filter((obstacle) => {
       const y = obstacle.sprite.y;
-      const isGone = y > height + DESPAWN_MARGIN || y < SPAWN_Y - DESPAWN_MARGIN;
+      const isGone = y > height + DESPAWN_MARGIN || (obstacle.speed > 0 && y < SPAWN_Y - DESPAWN_MARGIN);
       if (isGone) obstacle.sprite.destroy();
       return !isGone;
     });
@@ -431,11 +514,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isLaneFree(lane: number): boolean {
+    if (this.isLaneClosed(lane)) return false;
     const x = this.laneCenter(lane);
     // <= : конус на разметке занимает обе соседние полосы, чтобы рядом не появилась «стена»
     return !this.obstacles.some(
       (obstacle) => Math.abs(obstacle.sprite.x - x) <= this.laneWidth / 2 && obstacle.sprite.y < FREE_LANE_ZONE_Y,
     );
+  }
+
+  /** Полоса закрыта дорожными работами, пока последний барьер участка не проехал верх экрана. */
+  private isLaneClosed(lane: number): boolean {
+    const end = this.closedLaneEnd;
+    return lane === this.closedLane && end !== undefined && end.active && end.y < FREE_LANE_ZONE_Y;
   }
 
   private spawnObstacles(): void {
@@ -496,9 +586,68 @@ export class GameScene extends Phaser.Scene {
     this.obstacles.push({ sprite, speed });
   }
 
+  // --- Дорожные работы ---
+
+  /** Участки стоят равномерно по трассе: на 1/(n+1), 2/(n+1)… её длины. */
+  private spawnRoadworks(): void {
+    const count = this.level.roadworks;
+    if (this.finishLine || this.nextRoadworks >= count) return;
+    const startAt = (this.level.length * (this.nextRoadworks + 1)) / (count + 1);
+    if (this.distance < startAt) return;
+    this.nextRoadworks += 1;
+
+    // перекрываем любую полосу, кроме встречных; объезд — в соседнюю попутную
+    const firstLane = this.rules.oncomingLanes;
+    const lanes = Array.from({ length: LANE_COUNT - firstLane }, (_, i) => firstLane + i);
+    const lane = Phaser.Utils.Array.GetRandom(lanes);
+    const canLeft = lane - 1 >= firstLane;
+    const canRight = lane + 1 < LANE_COUNT;
+    const detourRight = canRight && (!canLeft || Math.random() < 0.5);
+    const openEdges: Array<'leftEdge' | 'rightEdge'> = [];
+    if (lane > 0) openEdges.push('leftEdge');
+    if (lane < LANE_COUNT - 1) openEdges.push('rightEdge');
+
+    const coneHalf = this.textures.getFrame('cone').width / 2;
+    const xOf = (place: 'center' | 'leftEdge' | 'rightEdge') => {
+      if (place === 'leftEdge') return this.laneCenter(lane) - this.laneWidth / 2 + coneHalf;
+      if (place === 'rightEdge') return this.laneCenter(lane) + this.laneWidth / 2 - coneHalf;
+      return this.laneCenter(lane);
+    };
+
+    let farthestOffset = -1;
+    for (const piece of roadworksLayout(this, openEdges, detourRight)) {
+      const x = xOf(piece.place);
+      const y = SPAWN_Y - piece.offset;
+      const sprite: ObstacleSprite = piece.anim
+        ? this.add.sprite(x, y, piece.key).play(piece.anim)
+        : this.add.image(x, y, piece.key);
+      if (!piece.cone) sprite.setScale(GAME_CONFIG.roadworksSpriteScale); // конус уже нужного размера
+      sprite.setFlipX(piece.flipX ?? false).setDepth(piece.decor ? 1 : 2);
+      this.obstacles.push({ sprite, speed: 0, fixed: !piece.cone, decor: piece.decor });
+
+      if (piece.offset > farthestOffset) {
+        farthestOffset = piece.offset;
+        this.closedLaneEnd = sprite;
+      }
+    }
+
+    this.closedLane = lane;
+    this.moveTrafficOutOfLane(lane, detourRight ? lane + 1 : lane - 1);
+  }
+
+  /** Попутные машины в перекрытой полосе перестраиваются в полосу объезда, а не едут сквозь технику. */
+  private moveTrafficOutOfLane(lane: number, detourLane: number): void {
+    const laneX = this.laneCenter(lane);
+    for (const obstacle of this.obstacles) {
+      const isTraffic = obstacle.speed > 0 && !obstacle.fixed;
+      if (!isTraffic || Math.abs(obstacle.sprite.x - laneX) >= this.laneWidth * 0.75) continue;
+      this.tweens.add({ targets: obstacle.sprite, x: this.laneCenter(detourLane), duration: DETOUR_MS });
+    }
+  }
+
   // --- Столкновения ---
 
-  private hitbox(sprite: Phaser.GameObjects.Image): Phaser.Geom.Rectangle {
+  private hitbox(sprite: ObstacleSprite): Phaser.Geom.Rectangle {
     const w = sprite.displayWidth * GAME_CONFIG.hitboxScale;
     const h = sprite.displayHeight * GAME_CONFIG.hitboxScale;
     return new Phaser.Geom.Rectangle(sprite.x - w / 2, sprite.y - h / 2, w, h);
@@ -508,8 +657,9 @@ export class GameScene extends Phaser.Scene {
     if (time < this.invulnerableUntil) return;
 
     const playerBox = this.hitbox(this.player);
-    const hit = this.obstacles.find((obstacle) =>
-      Phaser.Geom.Intersects.RectangleToRectangle(playerBox, this.hitbox(obstacle.sprite)),
+    const hit = this.obstacles.find(
+      (obstacle) =>
+        !obstacle.decor && Phaser.Geom.Intersects.RectangleToRectangle(playerBox, this.hitbox(obstacle.sprite)),
     );
     if (!hit) return;
 
@@ -525,8 +675,13 @@ export class GameScene extends Phaser.Scene {
     if (this.lives <= 0) this.crashOut();
   }
 
-  /** Сбитое препятствие отлетает в сторону и исчезает. */
+  /** Сбитое препятствие отлетает в сторону и исчезает; тяжёлое (техника, барьер) только вздрагивает. */
   private knockAway(obstacle: Obstacle): void {
+    if (obstacle.fixed) {
+      this.tweens.add({ targets: obstacle.sprite, x: obstacle.sprite.x + 4, duration: 50, yoyo: true, repeat: 2 });
+      return;
+    }
+
     this.obstacles = this.obstacles.filter((other) => other !== obstacle);
     const side = obstacle.sprite.x < this.player.x ? -1 : 1;
     this.tweens.add({
