@@ -10,6 +10,7 @@ export function createGame(parent: string): Phaser.Game {
     height: 640,
     backgroundColor: '#1a1c2c',
     pixelArt: true, // без сглаживания — чёткие пиксели
+    roundPixels: true, // рисовать по целым пикселям: края не дрожат при движении
     scene: [ShopScene, GameScene], // первой запускается гараж
     scale: {
       mode: Phaser.Scale.FIT,

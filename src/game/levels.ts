@@ -90,8 +90,10 @@ export const LEVELS: LevelConfig[] = [
       icons: ['rw_sign_works', 'rw_sign_arrow', 'rw_barrier_1', 'rw_worker_0'],
     },
     theme: {
-      side: 0xc0cbdc, // бетон промзоны
-      sideDark: 0x8b9bb4,
+      // бетон промзоны: приглушённый и с мягким переходом полос — яркие контрастные полосы
+      // на скорости мерцают и утомляют глаза
+      side: 0x6d7c98,
+      sideDark: 0x627089,
       curbA: 0xffffff,
       curbB: 0xf77622,
       asphalt: 0x3a4466,

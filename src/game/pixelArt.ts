@@ -124,6 +124,9 @@ export type RoadTheme = {
 };
 
 export const ROAD_TILE_HEIGHT = 128;
+// Длина одной полоски бордюра. Мелкие контрастные полоски (16 px) на скорости ~10 px/кадр
+// дают эффект стробоскопа — рябь в глазах. 64 px меняются медленно и читаются как движение.
+const CURB_STRIPE_LENGTH = 64; // должна делить ROAD_TILE_HEIGHT нацело
 
 /**
  * Один «кадр» дороги на всю ширину экрана. Он повторяется по вертикали
@@ -168,7 +171,7 @@ export function makeRoadTexture(
   g.fillRect(roadLeft, 0, roadWidth, h);
 
   // бордюры в полоску
-  const curbStep = p * 4;
+  const curbStep = CURB_STRIPE_LENGTH;
   for (let y = 0; y < h; y += curbStep) {
     g.fillStyle((y / curbStep) % 2 === 0 ? theme.curbA : theme.curbB);
     g.fillRect(roadLeft - curbWidth, y, curbWidth, curbStep);
