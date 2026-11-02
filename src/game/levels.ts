@@ -5,6 +5,7 @@ export type LevelConfig = {
   name: string;
   length: number; // сколько пикселей нужно проехать до финиша
   maxSpeed: number; // максимальная скорость игрока, px/с
+  accelerationFactor: number; // множитель разгона (GAME_CONFIG.acceleration): 1 — обычный, меньше — плавнее
   spawnGap: number; // через сколько пикселей пути появляется новое препятствие
   coneChance: number; // доля конусов среди препятствий (остальное — машины)
   trafficMinSpeed: number; // скорость попутных машин, px/с
@@ -29,6 +30,7 @@ export const LEVELS: LevelConfig[] = [
     name: 'Уровень 1 — Загородное шоссе',
     length: 14000,
     maxSpeed: 520,
+    accelerationFactor: 1,
     spawnGap: 260,
     coneChance: 0.45,
     trafficMinSpeed: 160,
@@ -51,6 +53,7 @@ export const LEVELS: LevelConfig[] = [
     name: 'Уровень 2 — Пустынная трасса',
     length: 20000,
     maxSpeed: 640,
+    accelerationFactor: 0.6, // разгон плавнее: до максимума ~4 с вместо ~2.5 с
     spawnGap: 200,
     coneChance: 0.3,
     trafficMinSpeed: 200,
@@ -73,6 +76,7 @@ export const LEVELS: LevelConfig[] = [
     name: 'Уровень 3 — Ремонт трассы',
     length: 20000,
     maxSpeed: 600,
+    accelerationFactor: 1,
     spawnGap: 230,
     coneChance: 0.35,
     trafficMinSpeed: 180,

@@ -469,7 +469,7 @@ export class GameScene extends Phaser.Scene {
     const maxSpeed = hasNitro ? this.rules.maxSpeed * GAME_CONFIG.nitroSpeedBonus : this.rules.maxSpeed;
 
     if (hasNitro) this.speed += GAME_CONFIG.nitroAcceleration * seconds;
-    else if (this.isDown('up')) this.speed += GAME_CONFIG.acceleration * seconds;
+    else if (this.isDown('up')) this.speed += GAME_CONFIG.acceleration * this.rules.accelerationFactor * seconds;
     else if (this.isDown('down')) this.speed -= GAME_CONFIG.brake * seconds;
     else this.speed -= GAME_CONFIG.coastSlowdown * seconds;
 
