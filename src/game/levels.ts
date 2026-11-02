@@ -86,6 +86,7 @@ export const LEVELS: LevelConfig[] = [
     oncomingSpeed: 230,
     roadworks: 3,
     phase2: false,
+    buildings: 'industrial',
     tutorial: {
       title: 'ДОРОЖНЫЕ РАБОТЫ',
       text:

@@ -7,6 +7,14 @@ import desertRanchUrl from '../assets/buildings/desert_ranch.png';
 import desertShackUrl from '../assets/buildings/desert_shack.png';
 import desertTealUrl from '../assets/buildings/desert_teal.png';
 import desertTowerUrl from '../assets/buildings/desert_tower.png';
+import indCabinsUrl from '../assets/buildings/ind_cabins.png';
+import indFactoryUrl from '../assets/buildings/ind_factory.png';
+import indMaterialsUrl from '../assets/buildings/ind_materials.png';
+import indSilosUrl from '../assets/buildings/ind_silos.png';
+import indToiletsUrl from '../assets/buildings/ind_toilets.png';
+import indTrailerUrl from '../assets/buildings/ind_trailer.png';
+import indUnfinishedUrl from '../assets/buildings/ind_unfinished.png';
+import indWarehouseUrl from '../assets/buildings/ind_warehouse.png';
 import barnUrl from '../assets/buildings/house_barn.png';
 import blueUrl from '../assets/buildings/house_blue.png';
 import farmUrl from '../assets/buildings/house_farm.png';
@@ -38,6 +46,16 @@ const SPRITES = {
     desert_tower: desertTowerUrl,
     desert_shack: desertShackUrl,
     desert_teal: desertTealUrl,
+  },
+  industrial: {
+    ind_cabins: indCabinsUrl,
+    ind_unfinished: indUnfinishedUrl,
+    ind_warehouse: indWarehouseUrl,
+    ind_silos: indSilosUrl,
+    ind_trailer: indTrailerUrl,
+    ind_materials: indMaterialsUrl,
+    ind_factory: indFactoryUrl,
+    ind_toilets: indToiletsUrl,
   },
 };
 
