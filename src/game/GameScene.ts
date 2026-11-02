@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { loadBuildingAssets, pickBuildingKey, type BuildingSet } from './buildings';
 import { findCar } from './cars';
+import { loadRoadDecalAssets, pickRoadDecalKey } from './roadDecals';
 import { GAME_CONFIG } from './gameConfig';
 import { LEVELS, PHASE_2_ROAD_TINT, withPhase2, type LevelConfig } from './levels';
 import {
@@ -28,6 +29,7 @@ const SPEED_TO_KMH = 0.4; // перевод скорости в «км/ч» дл
 const SPAWN_Y = -80;
 const FREE_LANE_ZONE_Y = 120; // полоса считается занятой, если там есть препятствие выше этой линии
 const DESPAWN_MARGIN = 200;
+const DECAL_EDGE_MARGIN = 16; // детали асфальта не заходят на бордюр, px
 const DETOUR_MS = 1200; // за сколько попутная машина перестраивается из перекрытой полосы
 
 type ObstacleSprite = Phaser.GameObjects.Image | Phaser.GameObjects.Sprite;
@@ -72,9 +74,11 @@ export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Image;
   private finishLine?: Phaser.GameObjects.Image;
   private obstacles: Obstacle[] = [];
-  private buildings: Phaser.GameObjects.Image[] = []; // домики на обочине: только картинка
+  private scenery: Phaser.GameObjects.Image[] = []; // домики на обочине и детали асфальта: только картинка
   private lastBuilding: (Phaser.GameObjects.Image | undefined)[] = []; // самый верхний домик слева / справа
   private buildingGap: number[] = []; // через сколько px над ним появится следующий
+  private lastDecal?: Phaser.GameObjects.Image; // самая верхняя деталь на асфальте (лужа, трещина...)
+  private decalGap = 0;
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'up' | 'down' | 'left' | 'right', Phaser.Input.Keyboard.Key>;
@@ -117,6 +121,7 @@ export class GameScene extends Phaser.Scene {
   preload(): void {
     loadRoadworksAssets(this);
     loadBuildingAssets(this);
+    loadRoadDecalAssets(this);
   }
 
   private get roadLeft(): number {
@@ -135,7 +140,9 @@ export class GameScene extends Phaser.Scene {
     this.rules = this.level;
     this.phase = 1; // каждый уровень начинается с фазы 1, с середины трассы — фаза 2
     this.obstacles = [];
-    this.buildings = [];
+    this.scenery = [];
+    this.lastDecal = undefined;
+    this.decalGap = this.randomDecalGap();
     this.lastBuilding = [undefined, undefined];
     this.buildingGap = [this.randomBuildingGap(), this.randomBuildingGap()];
     this.finishLine = undefined;
@@ -157,7 +164,8 @@ export class GameScene extends Phaser.Scene {
     this.createTextures();
     createRoadworksAnimations(this);
     this.createWorld();
-    this.spawnBuildings(); // сразу заполняем обочину, чтобы на старте она не была пустой
+    this.spawnBuildings(); // сразу заполняем обочину и асфальт, чтобы на старте они не были пустыми
+    this.spawnDecals();
     this.createHud();
     this.createInput();
 
@@ -195,6 +203,7 @@ export class GameScene extends Phaser.Scene {
     this.steer(seconds);
     this.scrollWorld(seconds);
     this.spawnBuildings();
+    this.spawnDecals();
     this.spawnObstacles();
     this.spawnRoadworks();
     this.checkCollisions(time);
@@ -507,10 +516,10 @@ export class GameScene extends Phaser.Scene {
     if (this.finishLine) this.finishLine.y += step;
 
     const { height } = this.scale;
-    for (const building of this.buildings) building.y += step;
-    this.buildings = this.buildings.filter((building) => {
-      const isGone = building.getTopCenter().y > height;
-      if (isGone) building.destroy();
+    for (const item of this.scenery) item.y += step;
+    this.scenery = this.scenery.filter((item) => {
+      const isGone = item.getTopCenter().y > height;
+      if (isGone) item.destroy();
       return !isGone;
     });
 
@@ -557,13 +566,47 @@ export class GameScene extends Phaser.Scene {
     building.setPosition(side === 0 ? x : this.scale.width - x, bottom);
 
     if (this.phase === 2) building.setTint(PHASE_2_ROAD_TINT);
-    this.buildings.push(building);
+    this.scenery.push(building);
     this.lastBuilding[side] = building;
     return building;
   }
 
   private randomBuildingGap(): number {
     return Phaser.Math.Between(GAME_CONFIG.buildingGapMin, GAME_CONFIG.buildingGapMax);
+  }
+
+  // --- Детали на асфальте: лужи, трещины, люки ---
+
+  /** Как домики, только одна «колонка» на всю дорогу: деталь в случайном месте асфальта. */
+  private spawnDecals(): void {
+    let bottom = (this.lastDecal?.getTopCenter().y ?? this.scale.height) - this.decalGap;
+    while (bottom > 0) {
+      const decal = this.addDecal(bottom);
+      this.decalGap = this.randomDecalGap();
+      bottom = decal.getTopCenter().y - this.decalGap;
+    }
+  }
+
+  private addDecal(bottom: number): Phaser.GameObjects.Image {
+    const key = pickRoadDecalKey(this.lastDecal?.texture.key);
+    const decal = this.add
+      .image(0, bottom, key)
+      .setScale(GAME_CONFIG.roadDecalScale)
+      .setOrigin(0.5, 1)
+      .setAlpha(GAME_CONFIG.roadDecalAlpha)
+      .setDepth(0.3); // над асфальтом, под финишем, препятствиями и машинами
+
+    const half = decal.displayWidth / 2 + DECAL_EDGE_MARGIN;
+    decal.x = Phaser.Math.Between(this.roadLeft + half, this.roadLeft + ROAD_WIDTH - half);
+
+    if (this.phase === 2) decal.setTint(PHASE_2_ROAD_TINT);
+    this.scenery.push(decal);
+    this.lastDecal = decal;
+    return decal;
+  }
+
+  private randomDecalGap(): number {
+    return Phaser.Math.Between(GAME_CONFIG.roadDecalGapMin, GAME_CONFIG.roadDecalGapMax);
   }
 
   private laneCenter(lane: number): number {
@@ -767,7 +810,7 @@ export class GameScene extends Phaser.Scene {
     this.phase = 2;
     this.rules = withPhase2(this.level);
     this.road.setTint(PHASE_2_ROAD_TINT);
-    for (const building of this.buildings) building.setTint(PHASE_2_ROAD_TINT); // вечер и на обочине
+    for (const item of this.scenery) item.setTint(PHASE_2_ROAD_TINT); // вечер и на обочине, и на асфальте
     this.cameras.main.flash(300, 254, 174, 52);
 
     // надпись «ФАЗА 2» выпрыгивает, держится и исчезает

@@ -49,4 +49,10 @@ export const GAME_CONFIG = {
   buildingGapMax: 220,
   buildingOuterMargin: 56, // отступ от края экрана: справа там полоса прогресса, px
   buildingCurbMargin: 24, // отступ от бордюра, px
+
+  // --- Детали на асфальте: лужи, трещины, люки (на всех уровнях, не сталкиваются) ---
+  roadDecalScale: 2, // 1 пиксель спрайта = 2 px экрана
+  roadDecalGapMin: 120, // расстояние между деталями вдоль дороги, px
+  roadDecalGapMax: 420,
+  roadDecalAlpha: 0.85, // чуть прозрачнее, чтобы сливались с асфальтом и не казались препятствием
 };
