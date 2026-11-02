@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { loadBuildingAssets, pickBuildingKey } from './buildings';
+import { loadBuildingAssets, pickBuildingKey, type BuildingSet } from './buildings';
 import { findCar } from './cars';
 import { GAME_CONFIG } from './gameConfig';
 import { LEVELS, PHASE_2_ROAD_TINT, withPhase2, type LevelConfig } from './levels';
@@ -532,20 +532,21 @@ export class GameScene extends Phaser.Scene {
 
   /** Над верхним домиком каждой стороны освободилось место — ставим новый, случайный. */
   private spawnBuildings(): void {
-    if (!this.level.buildings) return;
+    const set = this.level.buildings;
+    if (!set) return;
     for (const side of [0, 1]) {
       // нижний край следующего домика: над предыдущим или, в самом начале, у низа экрана
       let bottom = (this.lastBuilding[side]?.getTopCenter().y ?? this.scale.height) - this.buildingGap[side]!;
       while (bottom > 0) {
-        const building = this.addBuilding(side, bottom);
+        const building = this.addBuilding(set, side, bottom);
         this.buildingGap[side] = this.randomBuildingGap();
         bottom = building.getTopCenter().y - this.buildingGap[side]!;
       }
     }
   }
 
-  private addBuilding(side: number, bottom: number): Phaser.GameObjects.Image {
-    const key = pickBuildingKey(this.lastBuilding[side]?.texture.key);
+  private addBuilding(set: BuildingSet, side: number, bottom: number): Phaser.GameObjects.Image {
+    const key = pickBuildingKey(set, this.lastBuilding[side]?.texture.key);
     const building = this.add.image(0, 0, key).setScale(GAME_CONFIG.buildingScale).setOrigin(0.5, 1).setDepth(0.5);
 
     // случайное место на полосе травы между краем экрана и бордюром
@@ -555,6 +556,7 @@ export class GameScene extends Phaser.Scene {
     const x = Phaser.Math.Between(minX, maxX);
     building.setPosition(side === 0 ? x : this.scale.width - x, bottom);
 
+    if (this.phase === 2) building.setTint(PHASE_2_ROAD_TINT);
     this.buildings.push(building);
     this.lastBuilding[side] = building;
     return building;
@@ -765,6 +767,7 @@ export class GameScene extends Phaser.Scene {
     this.phase = 2;
     this.rules = withPhase2(this.level);
     this.road.setTint(PHASE_2_ROAD_TINT);
+    for (const building of this.buildings) building.setTint(PHASE_2_ROAD_TINT); // вечер и на обочине
     this.cameras.main.flash(300, 254, 174, 52);
 
     // надпись «ФАЗА 2» выпрыгивает, держится и исчезает
