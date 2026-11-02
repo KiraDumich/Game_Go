@@ -140,6 +140,7 @@ export function makeRoadTexture(
   roadLeft: number,
   roadWidth: number,
   laneCount: number,
+  solidCenter: boolean, // двойная сплошная по центру — только там, где есть встречка
 ): void {
   if (scene.textures.exists(key)) return;
 
@@ -178,13 +179,13 @@ export function makeRoadTexture(
     g.fillRect(roadRight, y, curbWidth, curbStep);
   }
 
-  // разметка: по центру двойная сплошная (левый поток — встречный), между остальными полосами прерывистая
+  // разметка: по центру двойная сплошная (если левый поток встречный), между остальными полосами прерывистая
   g.fillStyle(theme.line);
   const laneWidth = roadWidth / laneCount;
   const centerLane = laneCount / 2;
   for (let lane = 1; lane < laneCount; lane++) {
     const x = roadLeft + lane * laneWidth;
-    if (lane === centerLane) {
+    if (solidCenter && lane === centerLane) {
       g.fillRect(x - p * 2, 0, p, h);
       g.fillRect(x + p, 0, p, h);
     } else {

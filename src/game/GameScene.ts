@@ -226,6 +226,7 @@ export class GameScene extends Phaser.Scene {
       this.roadLeft,
       ROAD_WIDTH,
       LANE_COUNT,
+      this.level.oncomingLanes > 0,
     );
   }
 
