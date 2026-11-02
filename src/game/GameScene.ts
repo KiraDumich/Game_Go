@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { loadBuildingAssets, pickBuildingKey } from './buildings';
 import { findCar } from './cars';
 import { GAME_CONFIG } from './gameConfig';
 import { LEVELS, PHASE_2_ROAD_TINT, withPhase2, type LevelConfig } from './levels';
@@ -71,6 +72,9 @@ export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Image;
   private finishLine?: Phaser.GameObjects.Image;
   private obstacles: Obstacle[] = [];
+  private buildings: Phaser.GameObjects.Image[] = []; // домики на обочине: только картинка
+  private lastBuilding: (Phaser.GameObjects.Image | undefined)[] = []; // самый верхний домик слева / справа
+  private buildingGap: number[] = []; // через сколько px над ним появится следующий
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'up' | 'down' | 'left' | 'right', Phaser.Input.Keyboard.Key>;
@@ -112,6 +116,7 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     loadRoadworksAssets(this);
+    loadBuildingAssets(this);
   }
 
   private get roadLeft(): number {
@@ -130,6 +135,9 @@ export class GameScene extends Phaser.Scene {
     this.rules = this.level;
     this.phase = 1; // каждый уровень начинается с фазы 1, с середины трассы — фаза 2
     this.obstacles = [];
+    this.buildings = [];
+    this.lastBuilding = [undefined, undefined];
+    this.buildingGap = [this.randomBuildingGap(), this.randomBuildingGap()];
     this.finishLine = undefined;
     this.state = 'countdown';
     this.raceStartAt = this.time.now + GAME_CONFIG.countdownMs;
@@ -149,6 +157,7 @@ export class GameScene extends Phaser.Scene {
     this.createTextures();
     createRoadworksAnimations(this);
     this.createWorld();
+    this.spawnBuildings(); // сразу заполняем обочину, чтобы на старте она не была пустой
     this.createHud();
     this.createInput();
 
@@ -185,6 +194,7 @@ export class GameScene extends Phaser.Scene {
     this.updateSpeed(time, seconds);
     this.steer(seconds);
     this.scrollWorld(seconds);
+    this.spawnBuildings();
     this.spawnObstacles();
     this.spawnRoadworks();
     this.checkCollisions(time);
@@ -497,6 +507,13 @@ export class GameScene extends Phaser.Scene {
     if (this.finishLine) this.finishLine.y += step;
 
     const { height } = this.scale;
+    for (const building of this.buildings) building.y += step;
+    this.buildings = this.buildings.filter((building) => {
+      const isGone = building.getTopCenter().y > height;
+      if (isGone) building.destroy();
+      return !isGone;
+    });
+
     for (const obstacle of this.obstacles) {
       obstacle.sprite.y += (this.speed - obstacle.speed) * seconds;
     }
@@ -509,6 +526,42 @@ export class GameScene extends Phaser.Scene {
       if (isGone) obstacle.sprite.destroy();
       return !isGone;
     });
+  }
+
+  // --- Домики на обочине ---
+
+  /** Над верхним домиком каждой стороны освободилось место — ставим новый, случайный. */
+  private spawnBuildings(): void {
+    if (!this.level.buildings) return;
+    for (const side of [0, 1]) {
+      // нижний край следующего домика: над предыдущим или, в самом начале, у низа экрана
+      let bottom = (this.lastBuilding[side]?.getTopCenter().y ?? this.scale.height) - this.buildingGap[side]!;
+      while (bottom > 0) {
+        const building = this.addBuilding(side, bottom);
+        this.buildingGap[side] = this.randomBuildingGap();
+        bottom = building.getTopCenter().y - this.buildingGap[side]!;
+      }
+    }
+  }
+
+  private addBuilding(side: number, bottom: number): Phaser.GameObjects.Image {
+    const key = pickBuildingKey(this.lastBuilding[side]?.texture.key);
+    const building = this.add.image(0, 0, key).setScale(GAME_CONFIG.buildingScale).setOrigin(0.5, 1).setDepth(0.5);
+
+    // случайное место на полосе травы между краем экрана и бордюром
+    const half = building.displayWidth / 2;
+    const minX = GAME_CONFIG.buildingOuterMargin + half;
+    const maxX = Math.max(minX, this.roadLeft - GAME_CONFIG.buildingCurbMargin - half);
+    const x = Phaser.Math.Between(minX, maxX);
+    building.setPosition(side === 0 ? x : this.scale.width - x, bottom);
+
+    this.buildings.push(building);
+    this.lastBuilding[side] = building;
+    return building;
+  }
+
+  private randomBuildingGap(): number {
+    return Phaser.Math.Between(GAME_CONFIG.buildingGapMin, GAME_CONFIG.buildingGapMax);
   }
 
   private laneCenter(lane: number): number {

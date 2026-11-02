@@ -42,4 +42,11 @@ export const GAME_CONFIG = {
   roadworksSignLead: 300, // знаки стоят за столько px до первого барьера
   roadworksConeGap: 90, // шаг конусов вдоль перекрытой полосы, px
   roadworksSpriteScale: 4, // 1 пиксель спрайта дорожных работ = 4 px экрана (как конус)
+
+  // --- Домики на обочине (на каких уровнях — в levels.ts, поле buildings) ---
+  buildingScale: 2, // 1 пиксель спрайта домика = 2 px экрана
+  buildingGapMin: 40, // расстояние между домиками на одной стороне, px
+  buildingGapMax: 220,
+  buildingOuterMargin: 56, // отступ от края экрана: справа там полоса прогресса, px
+  buildingCurbMargin: 24, // отступ от бордюра, px
 };
