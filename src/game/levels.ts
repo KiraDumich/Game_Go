@@ -53,14 +53,14 @@ export const LEVELS: LevelConfig[] = [
   {
     name: 'Уровень 2 — Пустынная трасса',
     length: 20000,
-    maxSpeed: 640,
+    maxSpeed: 600,
     accelerationFactor: 0.6, // разгон плавнее: до максимума ~4 с вместо ~2.5 с
-    spawnGap: 200,
+    spawnGap: 260, // препятствия так же редко, как на 1-м уровне
     coneChance: 0.3,
     trafficMinSpeed: 200,
     trafficMaxSpeed: 320,
     oncomingLanes: 2, // обе полосы за двойной сплошной
-    oncomingSpeed: 220,
+    oncomingSpeed: 170,
     roadworks: 0,
     phase2: true, // вторая волна (вечер) с середины трассы — только на этом уровне
     buildings: 'desert',
