@@ -178,11 +178,18 @@ export function makeRoadTexture(
     g.fillRect(roadRight, y, curbWidth, curbStep);
   }
 
-  // прерывистая разметка между полосами
+  // разметка: по центру двойная сплошная (левый поток — встречный), между остальными полосами прерывистая
   g.fillStyle(theme.line);
   const laneWidth = roadWidth / laneCount;
+  const centerLane = laneCount / 2;
   for (let lane = 1; lane < laneCount; lane++) {
-    g.fillRect(roadLeft + lane * laneWidth - p, 0, p * 2, h / 2);
+    const x = roadLeft + lane * laneWidth;
+    if (lane === centerLane) {
+      g.fillRect(x - p * 2, 0, p, h);
+      g.fillRect(x + p, 0, p, h);
+    } else {
+      g.fillRect(x - p, 0, p * 2, h / 2);
+    }
   }
 
   g.generateTexture(key, screenWidth, h);

@@ -59,7 +59,7 @@ export const LEVELS: LevelConfig[] = [
     coneChance: 0.3,
     trafficMinSpeed: 200,
     trafficMaxSpeed: 320,
-    oncomingLanes: 1,
+    oncomingLanes: 2, // обе полосы за двойной сплошной
     oncomingSpeed: 220,
     roadworks: 0,
     phase2: true, // вторая волна (вечер) с середины трассы — только на этом уровне
@@ -82,7 +82,7 @@ export const LEVELS: LevelConfig[] = [
     coneChance: 0.35,
     trafficMinSpeed: 180,
     trafficMaxSpeed: 300,
-    oncomingLanes: 1,
+    oncomingLanes: 2, // обе полосы за двойной сплошной
     oncomingSpeed: 230,
     roadworks: 3,
     phase2: false,
